@@ -1,0 +1,495 @@
+---
+title: "Organizing data"
+format: html
+---
+
+```{r}
+library(R.matlab)
+library(dplyr)
+```
+
+
+## Data review
+
+-   `bins`: binned neural recordings, $4600 \times 100 \times 96$, or samples times binned sums times channels
+-   `file.names`: (unsure) an empty string
+-   `run.names`: (unsure) broken references to the raw data
+-   `incl.subj`: subject ID
+-   `save.label`: the stimulus labels
+-   `session.label`: experimental details
+
+In `session.label`, columns are:
+
+1. dummy indexing, 
+2. area recorded, 
+3. age at recording (weeks), and
+4. number of repeats per stimulus. 
+
+## Constants
+
+```{r}
+t2_dir <- "data/raw/lee2024/data/textures2_data/"
+```
+
+## Helper functions
+
+These functions assume that the input data `x` is the loaded MATLAB file. 
+
+```{r}
+#' Extract and clean the stimuli from MATLAB data
+#' 
+#' Labels the repetitions. 
+#' 
+#' @param x readMat output of `textures2` data
+#' @returns A data frame with columns coherence, family, id, id_blank
+clean_stimuli <- function(x) {
+  stims <- data.frame(x$save.label)
+  colnames(stims) <- c(
+    "coherence", "family", "id", "coherence_t3", "x5", "id_blank" 
+  )
+  stims %>%
+    select(-coherence_t3, -x5) %>%
+    group_by(coherence, family, id, id_blank) %>%
+    mutate(repetition = row_number()) %>%
+    ungroup() %>%
+    group_by(family, id) %>%
+    mutate(famsamp = cur_group_id())
+}
+
+#' Calculate distance d' (d prime)
+#' 
+#' Given two response distributions, calculates d' as described in 
+#' Physiological Data Analysis - Initial Analysis
+#' 
+#' @param x1 a numeric vector
+#' @param x2 a numeric vector
+#' @param na.rm whether NAs should be removed, defaults to `TRUE`. 
+#' 
+#' @returns numeric d' value
+
+dprime <- function(x1, x2, na.rm = TRUE) {
+  (mean(x1, na.rm = na.rm) - mean(x2, na.rm = na.rm)) / 
+    sqrt(0.5 * (
+      var(x1, na.rm = na.rm) + var(x2, na.rm = na.rm)
+    ))
+} 
+
+#' Apply d' calculation over matrices
+#' 
+#' A modification to the `dprime` calculation that takes advantage of
+#' `Rfast` for multiple calculations.
+#' 
+#' @param x1 a numeric matrix
+#' @param x2 a numeric matrix
+#' @param nbins int for number of columns
+#' @param na.rm defaults to `TRUE`
+#' 
+#' @returns numeric vector of d' values
+
+apply_dprime <- function(x1, x2, nbins, na.rm = TRUE) {
+  if (is.null(dim(x1))) {
+    x1 <- matrix(x1, ncol = nbins)
+    x2 <- matrix(x2, ncol = nbins)
+  }
+  (colMeans(x1, na.rm = na.rm) - colMeans(x2, na.rm = na.rm)) / 
+    sqrt(0.5 * (
+      Rfast::colVars(x1, na.rm = na.rm) + Rfast::colVars(x2, na.rm = na.rm)
+    ))
+}
+
+#' Find onset time in single channel
+#' 
+#' Given a vector of distances, find the first location where the 
+#' absolute value of d' exceeds 0.4 and the following 2 windows are also
+#' suprathreshold (and of the same sign). 
+#' 
+#' @param dp numeric vector of distance values
+#' @param threshold d prime threshold for onset, defaults to `0.4`.
+#' 
+#' @returns integer index of onset time if conditions met, else `NA`
+
+onset_channel <- function(dp, threshold) {
+  n <- length(dp)
+  s <- sign(dp)
+
+  pass_thresh <- abs(dp) > threshold
+  
+  pass_thresh  <- pass_thresh[1:(n - 2)]
+  pass_window1 <- pass_thresh[2:(n - 1)] & 
+    (s[1:(n - 2)] == s[2:(n - 1)])
+  pass_window2 <- pass_thresh[3:n] & 
+    (s[1:(n - 2)] == s[3:n])
+  
+  which(pass_thresh & pass_window1 & pass_window2)[1]
+}
+
+#' Find session onset
+#' 
+#' Given contrasting indices, return the median onset time in a session. 
+#' 
+#' @param firings numeric matrix of spiking values
+#' @param indices two-element list containing contrasting indices for d' calculation
+#' @param threshold d' threshold for onset, defaults to `0.4`.
+#' 
+#' @return int of index of median onset
+
+onset_session <- function(firings, indices, threshold = 0.4) {
+  f1 <- firings[indices[[1]], , ]
+  f2 <- firings[indices[[2]], , ]
+
+  dprimes <- mapply(
+    apply_dprime, 
+    split(f1, slice.index(f1, 3)),
+    split(f2, slice.index(f2, 3)), 
+    MoreArgs = list(nbins = dim(firings)[2])
+  )
+
+  onsets <- apply(dprimes, 2, onset_channel, threshold = threshold)
+  median(onsets, na.rm = T) - 2
+}
+
+#' Split repetitions
+#' 
+#' Given the data frame containing stimuli details, return the indices 
+#' corresponding to the odd and even repetitions of the non-blank stimuli. 
+#' 
+#' @param stims data frame containing stimuli details
+#' 
+#' @return list of the odd and even indices, respectively
+
+odd_even_reps <- function(stims) {
+  list(
+    odd = (stims$repetition %% 2 == 0 & stims$coherence != 0), 
+    even = (stims$repetition %% 2 == 1 & stims$coherence != 0)
+  )
+}
+
+#' Sum within matrix rows
+#' 
+#' Sum the response of rows given a grouping index. 
+#' 
+#' TODO: replace with standard dplyr functionality
+#' 
+#' @param mat numeric matrix
+#' @param grps integer vector where duplicated values correspond to the same group
+#' 
+#' @return matrix of dimension length(unique(grp)) x ncol(mat)
+
+grouped_rowsums <- function(mat, grps) {
+  sapply(
+    unique(grps), 
+    function(grp) {
+      apply(mat[grps == grp, ], 2, mean, na.rm = T)
+    }
+  ) %>%
+    t()
+}
+
+#' Find responsive channels
+#' 
+#' Average the response for even and odd repetitions of each stimulus, 
+#' then retain channels with a Pearson correlation exceeding some threshold. 
+#' 
+#' From what I can tell, repetitions within a sample and family are also averaged. 
+#' 
+#' @param firings numeric matrix of binned spiking data
+#' @param indices two-element list containing indices for the groups to compare
+#' @param subgroups indices of subgroups to average over
+#' @param times indices of time points to compare
+#' @param threshold numeric correlation threshold, default `0.4`
+#' 
+#' @return int vector of responsive channels
+
+find_channels <- function(firings, indices, subgroups, times, threshold = 0.4) {
+  avg_firings <- lapply(
+    indices, 
+    function(idx) {
+      subgrps <- data.frame(idx = idx, grp = subgroups) %>%
+        group_by(idx, grp) %>%
+        mutate(subgrp = cur_group_id()) %>%
+        .$subgrp
+      subgrps <- subgrps[idx]
+      apply(firings[idx, times, ], c(1, 3), mean, na.rm = T) %>%
+        grouped_rowsums(subgrps)
+    }
+  )
+  cors <- diag(cor(avg_firings[[1]], avg_firings[[2]]))
+  which(cors > threshold)
+}
+```
+
+```{r}
+#' Spike summary from binned data and stimulus data frame
+#' 
+#' Given stimuli and the binned data, subset the spikes into 
+#' onset time and responsive channels.
+#' 
+#' Currently assumes the standard groupings (TODO: elaborate)
+#' 
+#' @param stims output of `clean_stimuli`
+#' @param firings binned spiking data
+#' 
+#' @return numeric matrix of summarized spike data
+
+spike_summary <- function(
+  stims, 
+  firings, 
+  keep_pre_onset = TRUE, 
+  keep_unresponsive = TRUE, 
+  keep_blanks = TRUE
+) {
+  # Get onset times
+  onset_time <- onset_session(
+    firings, 
+    list(stims$coherence > 0, stims$coherence == 0)
+  )
+  times <- onset_time:(onset_time + 14)
+  message("Onset time: ", onset_time)
+
+  # Get responsive channels
+  rep_split <- odd_even_reps(stims)
+  responsive <- find_channels(firings, rep_split, stims$famsamp, times)
+
+  # Turn firings into tibble
+  firings <- apply(firings[, times, responsive], c(1, 3), sum, na.rm = T) %>% 
+    as.data.frame() %>% 
+    tibble::rownames_to_column("stimulus") %>% 
+    tidyr::gather("channel", "firing", -stimulus) %>%
+    mutate(channel = as.factor(as.integer(gsub("V", "", channel))))
+
+  # Average firings by family and sample
+  avg_firings <- data.frame(stims, firings) %>%
+    select(-id_blank, -repetition, -famsamp) %>%
+    filter(coherence > 0) %>%
+    group_by(coherence, family, id, channel) %>%
+    summarize(firing = mean(firing)) %>%
+    tidyr::pivot_wider(names_from = channel, values_from = firing) %>%
+    ungroup() %>%
+    select(-coherence:-id) %>%
+    as.matrix()
+}
+```
+
+## Sandbox
+
+The onset time seems to be consistently around 60 for this data, but it seems that they only apply their onset time finding function to the first 20 bins. 
+
+```{r}
+t2_v1 <- R.matlab::readMat(paste0(t2_dir, "zz_FC_Textures2_20wk_4reps_1subj.mat"))
+stims <- clean_stimuli(t2_v1)
+idx_noise <- which(stims$coherence == 1)
+idx_blank <- which(stims$coherence == 0)
+
+firings <- t2_v1$bins
+firings_noise <- firings[idx_noise, , ]
+firings_blank <- firings[idx_blank, , ]
+
+dprimes <- mapply(
+  apply_dprime, 
+  split(firings_noise, slice.index(firings_noise, 3)), 
+  split(firings_blank, slice.index(firings_blank, 3)), 
+  MoreArgs = list(nbins = 100)
+)
+
+onsets <- apply(dprimes, 2, find_onset)
+# -2 offset in `Textures2_onset_via_discrim.m`
+onset_time <- median(onsets, na.rm = T) - 2
+```
+
+```{r}
+rep_split <- odd_even_reps(stims)
+responsive <- find_channels(firings, rep_split, stims$famsamp, onset_time:(onset_time + 14))
+```
+
+```{r}
+t2_v1_avg <- spike_summary(
+  stims, 
+  firings, 
+  keep_pre_onset = TRUE, 
+  keep_unresponsive = TRUE, 
+  keep_blanks = TRUE
+)
+```
+
+```{r}
+plot(rowMeans(dprimes), type = "l")
+```
+
+
+```{r}
+idx_natur <- which(stims$coherence == 2)
+firings_natur <- firings[idx_natur, , ]
+
+dprimes_natur <- mapply(
+  apply_dprime, 
+  split(firings_natur, slice.index(firings_natur, 3)), 
+  split(firings_blank, slice.index(firings_blank, 3)), 
+  MoreArgs = list(nbins = 100)
+)
+
+plot(rowMeans(dprimes_natur), type = "l")
+```
+
+```{r}
+dprimes_discrim <- mapply(
+  apply_dprime, 
+  split(firings_natur, slice.index(firings_natur, 3)), 
+  split(firings_noise, slice.index(firings_noise, 3)), 
+  MoreArgs = list(nbins = 100)
+)
+
+plot(rowMeans(dprimes_discrim), type = "l")
+```
+
+```{r}
+t2_v4 <- readMat(paste0(t2_dir, "zz_V4_Textures2_29wk_4reps_2subj.mat"))
+stims <- clean_stimuli(t2_v4)
+idx_noise <- which(stims$coherence == 1)
+idx_blank <- which(stims$coherence == 0)
+
+firings <- t2_v4$bins
+firings_noise <- firings[idx_noise, , ]
+firings_blank <- firings[idx_blank, , ]
+
+dprimes <- mapply(
+  apply_dprime, 
+  split(firings_noise, slice.index(firings_noise, 3)), 
+  split(firings_blank, slice.index(firings_blank, 3)), 
+  MoreArgs = list(nbins = 100)
+)
+
+onsets <- apply(dprimes, 2, find_onset)
+# -2 offset in `Textures2_onset_via_discrim.m`
+onset_time <- median(onsets, na.rm = T) - 2
+
+plot(rowMeans(dprimes), type = "l")
+```
+
+```{r}
+  # 2) get firing averages
+  # The below should be modified to only sum over responsive channels
+  # Produces 4600 x 96 matrix
+  # figure out channels for multi-subject
+  firings <- apply(x$bins[, , 1:96], c(1, 3), sum, na.rm = T) %>% 
+    as.data.frame() %>% 
+    tibble::rownames_to_column("stimulus") %>% 
+    tidyr::gather("channel", "firing", -stimulus) %>%
+    mutate(channel = as.factor(as.integer(gsub("V", "", channel))))
+
+  # 3) join stimuli detail and firing, then average
+  avg_firings <- data.frame(stims, firings) %>%
+    select(-coherence_t3, -x5, -id_blank, -stimulus) %>%
+    filter(coherence > 0) %>%
+    group_by(coherence, family, id, channel) %>%
+    summarize(firing = mean(firing)) %>%
+    tidyr::pivot_wider(names_from = channel, values_from = firing) %>%
+    ungroup() %>%
+    select(-coherence:-id) %>%
+    as.matrix()
+```
+
+## Sanity check on dimensionality
+
+Around 36 percent of the data in `bins` is `NA` for the V1 observations. There are no `NA` values in the V4 observations.
+
+Based on `repository_textures2_analysis_figures_v0.m`, there should be a step to select for the onset time and the responsive channels. I currently can't recreate it, mostly since the relevant variable `useTime` relies on `parfor_extract_useTime`, and I'm not really sure where it's described. Thus, the current analysis will likely have a flatter eigenvalue curve.
+
+However, the generated matrices produce some columns that are all zero, so maybe those were already identified as unresponsive channels. I'll remove them here.
+
+Furthermore, I ignore `useReps` for the below.
+
+```{r}
+# t2_fs <- list.files(t2_dir)
+# dummy <- lapply(
+#   t2_fs, 
+#   function(x) {
+#     message("Reading: ", x)
+#     temp <- readMat(paste0(t2_dir, x))
+#     message("Subject: ", temp$incl.subj)
+#     message("Exp. details: ", temp$session.label)
+#   }
+# )
+```
+
+```{r}
+t2_v1 <- readMat(paste0(t2_dir, "zz_V1_Textures2_29wk_4reps_1subj.mat"))
+t2_v4 <- readMat(paste0(t2_dir, "zz_V4_Textures2_29wk_4reps_2subj.mat"))
+```
+
+```{r}
+mean(is.na(t2_v1$bins))
+mean(is.na(t2_v4$bins))
+```
+
+```{r}
+get_eigens <- function(x, n_eigen = 50) {
+  # 1) get stimuli details
+  stims <- data.frame(x$save.label)
+  colnames(stims) <- c(
+    "coherence", "family", "id", "coherence_t3", "x5", "id_blank" 
+  )
+  
+  # 2) get firing averages
+  # The below should be modified to only sum over responsive channels
+  # Produces 4600 x 96 matrix
+  # figure out channels for multi-subject
+  firings <- apply(x$bins[, , 1:96], c(1, 3), sum, na.rm = T) %>% 
+    as.data.frame() %>% 
+    tibble::rownames_to_column("stimulus") %>% 
+    tidyr::gather("channel", "firing", -stimulus) %>%
+    mutate(channel = as.factor(as.integer(gsub("V", "", channel))))
+
+  # 3) join stimuli detail and firing, then average
+  avg_firings <- data.frame(stims, firings) %>%
+    select(-coherence_t3, -x5, -id_blank, -stimulus) %>%
+    filter(coherence > 0) %>%
+    group_by(coherence, family, id, channel) %>%
+    summarize(firing = mean(firing)) %>%
+    tidyr::pivot_wider(names_from = channel, values_from = firing) %>%
+    ungroup() %>%
+    select(-coherence:-id) %>%
+    as.matrix()
+
+  # 4) remove zeroes
+  avg_firings <- avg_firings[, Rfast::colVars(avg_firings) > 0.01]
+
+  # 5) return eigen values and vectors
+  # unsure if need to center
+  cov_ <- Rfast::cova(avg_firings, center = T)
+  Rfast::eigen.sym(cov_, n_eigen)
+}
+```
+
+```{r}
+eigens_v1 <- get_eigens(t2_v1)
+eigens_v4 <- get_eigens(t2_v4)
+```
+
+I suspect something has gone wrong here since the first eigenvalue is massive compared to the others.
+
+## Miscellaneous notes
+
+A commented-out line in `Textures2_familywise_texNat_dprime.m` suggests that the five families used for the behavioral analysis are `[18, 38, 48, 60, 99]`.
+
+`parfor_extract_useTime`: not sure what this is doing
+
+## TODO
+
+- Firing rate over the trial
+- Whitening or normalization
+  - Centering or z-score
+  - Columns vs. rows
+- Literature on processing?
+  - Methods paper?
+- Possible EDA
+  - Example neurons and firing
+- Variability within and between texture families
+  - Any change in the visual regions?
+  - Noise vs. natural structure
+  - Sanity check on the blanks vs. the coherences
+- Tensor-based dimensionality reduction
+  - Explains why discrimination is earlier in V2 but is better in V4 overall
+  - Could also simply subset the time region
+- To troubleshoot 
+  - Sampling rate or frequency of sampling
+- Circular reasoning for onset time and responsive channel definition?

@@ -1,0 +1,196 @@
+---
+title: "Exploratory data analysis for Feather lab meeting"
+date: 2026-02-12
+author: Al W. Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+library(R.matlab)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(gt)
+
+PRJID <- "20260212"
+
+knitr::opts_chunk$set(
+  echo = F, warning = F, message = F
+)
+
+source("R/preprocessing.R")
+t2_dir <- "data/raw/lee2024/data/textures2_data/"
+
+out_dir <- paste0("data/processed/", PRJID, "/")
+res_dir <- paste0("results/", PRJID, "/")
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal())
+theme_replace(axis.title = element_text(size = 9))
+```
+
+
+## Data
+
+```{r file names, eval = F}
+files <- list.files(t2_dir)
+
+out_subdirs <- paste0(
+  out_dir, 
+  c("session_info", "stimuli", "recordings"), "/")
+
+dummy <- lapply(
+  out_subdirs, 
+  function(x) if (!dir.exists(x)) dir.create(x)
+)
+
+silent <- FALSE
+recordings <- lapply(
+  files, 
+  function(f) {
+    f_details <- file_info(f)
+    if (!silent) 
+      message(
+        "Reading ", f_details$region, " (",
+        f_details$age, " wks, ", 
+        f_details$n_subjects, " subjects)..."
+      )
+    
+    matlab <- R.matlab::readMat(paste0(t2_dir, f))
+    stims <- clean_stimuli(matlab)
+    firings <- matlab$bins
+    rm(matlab)
+
+    # write info
+    # f_name <- paste0(
+    #   f_details$region, "_", 
+    #   f_details$age, "wk_", 
+    #   f_details$n_subjects)
+    f_name <- paste0(f_details$region, "_", f_details$age, "wk")
+    stim_f <- paste0(out_subdirs[2], f_name, ".csv")
+    neur_f <- paste0(out_subdirs[3], f_name, ".rds")
+    write.csv(stims, stim_f)
+    saveRDS(firings, neur_f)
+
+    f_details$stimuli_file <- stim_f
+    f_details$recordings_file <- neur_f
+    
+    if (!silent) message("Saving ", f_name)
+    write.table(
+      yaml::as.yaml(f_details), 
+      paste0(out_subdirs[1], f_name, ".yaml"), 
+      quote = F, row.names = F, col.names = F)
+  }
+)
+```
+
+```{r}
+v1_info <- yaml::read_yaml(paste0(out_subdirs[1], "V1_29wk.yaml"))
+v1 <- list(
+  info = v1_info, 
+  stim = read.csv(v1_info$stimuli_file), 
+  rcrd = readRDS(v1_info$recordings_file))
+
+v2_info <- yaml::read_yaml(paste0(out_subdirs[1], "V2_29wk.yaml"))
+v2 <- list(
+  info = v2_info, 
+  stim = read.csv(v2_info$stimuli_file), 
+  rcrd = readRDS(v2_info$recordings_file))
+
+v4_info <- yaml::read_yaml(paste0(out_subdirs[1], "V4_29wk.yaml"))
+v4 <- list(
+  info = v4_info, 
+  stim = read.csv(v4_info$stimuli_file), 
+  rcrd = readRDS(v4_info$recordings_file))
+
+v_list <- list(v1 = v1, v2 = v2, v4 = v4)
+```
+
+## Average firings
+
+```{r}
+N_ARRAY <- 96
+v_list <- v1
+noise_idx <- which(v_list$stim$coherence == 1)
+struc_idx <- which(v_list$stim$coherence == 2)
+n_channels <- v_list$info$n_subjects * N_ARRAY
+
+rcrd_dt <- lapply(1:n_channels, function(x) {
+  tempmat <- v_list$rcrd[, , x]
+  if (mean(is.na(tempmat)) > 0.999) {
+    # message("Channel ", x, " is empty.")
+    return()
+  }
+  temp <- data.table(tempmat)
+  colnames(temp) <- paste0("bin", 1:ncol(temp))
+  temp$channel <- x
+  temp$stimulus <- 1:nrow(temp)
+  dt <- melt(temp, id.vars = c("channel", "stimulus"), variable.name = "bin", value.name = "spikes")
+  dt$bin <- as.numeric(gsub(pattern = "bin", x = dt$bin, replacement = ""))
+  dt
+})
+rcrd_dt <- do.call(rbind, rcrd_dt)
+# fam_avg <- rcrd_dt[ , lapply(.(), sum)]
+```
+
+```{r}
+v4 <- readRDS(paste0(out_dir, "V4_29wk_2s.RDS"))
+keep_idx <- which(stims$coherence > 0)
+grps <- stims[keep_idx, "coherence"]
+flat <- apply(firings[keep_idx, , ], c(1, 2), mean, na.rm = T)
+v4_df <- apply_rowgroups(
+  flat, grps$coherence, mean, na.rm = T
+) %>%
+  as.data.frame() %>%
+  mutate(coherence = unique(grps$coherence)) %>%
+  gather("time", "firing", -coherence) %>%
+  mutate(time = as.integer(gsub("X", "", time)))
+
+v4_df %>%
+  filter(time %in% times) %>%
+  mutate(time = (time - onset_time)) %>%
+  mutate(Image = ifelse(
+    coherence == 1, 
+    "Noise", "Naturalistic"), 
+    region = region_names[x]
+  )
+```
+
+```{r}
+#| label: fig-avg_firings
+#| fig-cap: "Average firing rate over images with naturalistic (red) or noise (blue) structure, separated by region in the visual cortex. In general, later visual regions (V4, IT) tend to show more divergence than early visual regions."
+recordings <- readRDS("data/processed/20260206/recordings.RDS")
+noise_vs_structure <- do.call(rbind, recordings)
+p <- noise_vs_structure %>%
+  mutate(region = factor(region, levels = c("V1", "FC", "V2", "V4", "IT"))) %>%
+  ggplot(aes(x = time, y = firing, color = Image)) + 
+    geom_line() + 
+    facet_wrap(~region, scales = "free_y", nrow = 1) + 
+    geom_vline(xintercept = 0, linetype = "dotted", alpha = 0.5) +
+    labs(
+      x = "Time after stimulus (ms)", 
+      y = "Average firing"
+    )
+ggsave(paste0(res_dir, "noise_vs_structure.png"), p, width = 9, height = 2.5)
+```

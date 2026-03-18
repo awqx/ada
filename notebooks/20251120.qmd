@@ -1,0 +1,106 @@
+---
+title: "Lookthrough of data"
+format: html
+---
+
+# Data source
+
+Data is available on [Zenodo](https://zenodo.org/records/10888270).
+
+## Subject data
+
+Subjects M1, M2, M6 had recordings at both an early or late area.
+
+-   M1: V1-V2 border, V4
+
+-   M2: V2, V4
+
+-   M6: V1, IT
+
+The authors could not confidently delineate activity in M3, which is labeled as FC (V1, V2, or V4) and IT.
+
+Comparisons should be valid across different subjects and can be pooled. However, it could be helpful to have between-subject statistics and variance (though it depends on the analysis).
+
+```{r}
+library(R.matlab)
+library(dplyr)
+```
+
+# Behavioral data
+
+```{r}
+behavior <- readMat("data/raw/lee2024/data/behavior_data.mat")
+behavior <- behavior$inputData
+dim(behavior)
+```
+
+Due to a quirk of MATLAB file reading, `behavior` is a matrix containing lists that are nested by two levels. I.e., the actual content can only be accessed after indexing through `.[[1]][[1]]`.
+
+The first column of the behavioral input data is a nested list which, after some indexing, gives the age of the subject during the trial.
+
+```{r}
+ages <- apply(behavior, 1, function(x) x[1][[1]][[1]])
+```
+
+The third column contains a $1 \times 2$ matrix where the first column is the animal ID and the second column is the image label.
+
+```{r}
+ids <- apply(behavior, 1, function(x) x[3][[1]][[1]][, 1])
+imgs <- apply(behavior, 1, function(x) x[3][[1]][[1]][, 2])
+```
+
+The second column contains an $m \times 3$ data matrix containing the results from the 4-choice oddity task, where $m$ is the number of levels of naturalistic structure tested. The first column is the level, the second column is the number correct, and the third column is the the total number. An example is printed below.
+
+```{r}
+behavior[1, 2][[1]][[1]] %>% data.frame() %>% knitr::kable(col.names = c("Level", "No. correct", "No. total"))
+```
+
+I unpacked these results into a list of $n = 151$ matrices.
+
+```{r}
+oddities <- apply(behavior, 1, function (x) x[2][[1]][[1]])
+```
+
+# Array maps
+
+These are in .CMP files (??), which I assume is something specific to how the data is processed and I will ignore for now.
+
+# Spike data
+
+## Textures2 vs. Textures3
+
+The data labeled as `Textures2` vs. `Textures3` seem to contain the same textures but differ the binning of the spike data (150 ms for former, 10 ms for latter). From what I can tell, `textures2_data/` contains data for Figures 3-5 and `textures3_data/` contains data for Figure 6.
+
+## Textures2
+
+Picking an arbitrary file of recorded data:
+
+```{r}
+df <- readMat("data/raw/lee2024/data/textures2_data/zz_FC_Textures2_20wk_4reps_1subj.mat")
+```
+
+Data is binned and identified within each MATLAB file with subject, textures, etc in `bins`, which is 4600 x 100 x 96 electrodes, which I'm going to assume are bins x channels x electrodes ??.
+
+The session label contains the area, age at time of recording (in weeks), and number of repeats per stimulus. I am not sure what the first column is (??).
+
+```{r}
+df$session.label
+```
+
+```{r}
+names(df)
+```
+
+```{r}
+dim(df$bins)
+```
+
+# Random notes
+
+-   Only average over exactly the same presentation
+
+    -   Not just the texture family
+
+-   Stimuli x neurons x ROIs
+
+-   Ideally, stimuli identical across ROIs

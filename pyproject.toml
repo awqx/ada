@@ -1,0 +1,28 @@
+[project]
+name = "ada"
+version = "0.0.1"
+description = "Advanced data analysis"
+authors = [
+    { name="aL xin", email="axin@andrew.cmu.edu" },
+]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
+
+[project.urls]
+Homepage = "https://github.com/awqx/ada/"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
