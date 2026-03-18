@@ -1,0 +1,197 @@
+---
+title: "Organizing data"
+format: html
+---
+
+```{r}
+library(R.matlab)
+library(dplyr)
+```
+
+Only data from Figures 4, 5, and 6 are likely relevant for the purposes of the ADA. Behavioral and neurometric data in Figures 2 to 3 might be useful for verifying that I understand how the data is being organized.
+
+## Textures 2 vs. 3
+
+The data labeled as `Textures2` vs. `Textures3` seem to contain the same textures but differ the binning of the spike data (150 ms for former, 10 ms for latter).
+
+## Single file example for `textures2`
+
+### Overview of MATLAB file structure
+
+```{r}
+t2_dir <- "data/raw/lee2024/data/textures2_data/"
+t2 <- readMat(paste0(t2_dir, "zz_FC_Textures2_20wk_4reps_1subj.mat"))
+```
+
+The file contains the following named components:
+
+```{r}
+names(t2)
+```
+
+which are:
+
+-   `bins`: binned neural recordings, $4600 \times 100 \times 96$, or samples times bins times channels
+-   `file.names`: (unsure) an empty string
+-   `run.names`: (unsure) broken references to the raw data
+-   `incl.subj`: subject ID
+-   `save.label`: the stimulus labels
+-   `session.label`: experimental details
+
+### Stimulus labels
+
+```{r}
+stims <- data.frame(t2$save.label)
+colnames(stims) <- c(
+  "coherence", "family", "id", "coherence_t3", "x5", "id_blank" 
+)
+```
+
+The stimulus labels in `save.label` are stored as a $4600 \times 6$ matrix, where the number of rows corresponds to the number of stimuli passively observed in the session. I don't believe the rows correspond to the order the stimuli were presented, as the blank stimuli all appear in the same block.
+
+The first column categorizes the stimulus type as `0` for blank, `1` for noise, and `2` for texture. For `textures3`, noise data and texture data are both assigned `2` in the first column. In this case, the fourth column is `1000` for texture data and `0` for noise data. Source: `Textures2_onset_via_discrim.m`.
+
+The second column is the family label. There are 36 unique labels, corresponding to the 35 original natural texture families and blank textures. These labels do not correspond to the integers `1:35` and their values may be related to the original Portilla and Simoncelli method. Source: `Textures2_familywise_texNat_dprime.m`
+
+The third column is the sample label. There are 16 unique labels, corresponding to the 15 samples per family and the blank textures.
+
+The fourth column is only relevant for `textures3` (see the above description of the first column)
+
+The fifth column is used in `Textures2_familywise_texNat_dprime.m`, which creates a metric `dpOutFS` when the fifth column is equal to `1`.
+
+"FS" might be "first sample", but there are repeated values for the same family and sample. E.g., in the example below, values for `x5` are repeated for family 13, ID 4. For this example file, `x5` takes on values 1 through 8.
+
+```{r}
+stims %>% 
+  filter(coherence == 2, family == 13, id == 4) %>% 
+  arrange(x5) %>%
+  select(-id_blank, -coherence_t3) %>%
+  knitr::kable()
+```
+
+The sixth column is a sample ID for the blank samples and appears to simply increment by one for each occurrence of a blank sample. The numbering then repeats The sixth column is `1` when the first column is `> 0`. Source: `Texture_spike_count.m`.
+
+> Note that the identity of the 4th, 5th, and 6th columns changes in `repository_textures2_analysis_figures_v0.m` from line 186 onwards. The 5th and 6th columns are replaced with the 4th and 5th columnms and the new 4th column is a label for the visual area examined.
+
+### Experimental details
+
+The experimental details in `session.label` are formatted as a $1 \times 4$ matrix. The columns correspond to: 1) a dummy indexing row, 2) the area, 3) the age at time of recording in weeks, and 4) the number of repeats per stimulus.
+
+> I am not sure if the first column is a dummy column.
+
+## Single file example for `textures_3`
+
+```{r}
+t3 <- readMat("data/raw/lee2024/data/textures3_data/M1_n1_Textures3im18_190718.mat")
+```
+
+The file contains the following named components:
+
+```{r}
+names(t3)
+```
+
+> I'll leave `textures3` for now since it seems that there are additional preprocessing steps in `repository_textures3_analysis_figures_v0.m` and the files as-is are not comprehensible.
+
+## Sanity check on dimensionality
+
+Around 36 percent of the data in `bins` is `NA` for the V1 observations. There are no `NA` values in the V4 observations.
+
+Based on `repository_textures2_analysis_figures_v0.m`, there should be a step to select for the onset time and the responsive channels. I currently can't recreate it, mostly since the relevant variable `useTime` relies on `parfor_extract_useTime`, and I'm not really sure where it's described. Thus, the current analysis will likely have a flatter eigenvalue curve.
+
+However, the generated matrices produce some columns that are all zero, so maybe those were already identified as unresponsive channels. I'll remove them here.
+
+Furthermore, I ignore `useReps` for the below.
+
+```{r}
+# t2_fs <- list.files(t2_dir)
+# dummy <- lapply(
+#   t2_fs, 
+#   function(x) {
+#     message("Reading: ", x)
+#     temp <- readMat(paste0(t2_dir, x))
+#     message("Subject: ", temp$incl.subj)
+#     message("Exp. details: ", temp$session.label)
+#   }
+# )
+```
+
+```{r}
+t2_v1 <- readMat(paste0(t2_dir, "zz_V1_Textures2_29wk_4reps_1subj.mat"))
+t2_v4 <- readMat(paste0(t2_dir, "zz_V4_Textures2_29wk_4reps_2subj.mat"))
+```
+
+```{r}
+mean(is.na(t2_v1$bins))
+mean(is.na(t2_v4$bins))
+```
+
+```{r}
+get_eigens <- function(x, n_eigen = 50) {
+  # 1) get stimuli details
+  stims <- data.frame(x$save.label)
+  colnames(stims) <- c(
+    "coherence", "family", "id", "coherence_t3", "x5", "id_blank" 
+  )
+  
+  # 2) get firing averages
+  # The below should be modified to only sum over responsive channels
+  # Produces 4600 x 96 matrix
+  # figure out channels for multi-subject
+  firings <- apply(x$bins[, , 1:96], c(1, 3), sum, na.rm = T) %>% 
+    as.data.frame() %>% 
+    tibble::rownames_to_column("stimulus") %>% 
+    tidyr::gather("channel", "firing", -stimulus) %>%
+    mutate(channel = as.factor(as.integer(gsub("V", "", channel))))
+
+  # 3) join stimuli detail and firing, then average
+  avg_firings <- data.frame(stims, firings) %>%
+    select(-coherence_t3, -x5, -id_blank, -stimulus) %>%
+    filter(coherence > 0) %>%
+    group_by(coherence, family, id, channel) %>%
+    summarize(firing = mean(firing)) %>%
+    tidyr::pivot_wider(names_from = channel, values_from = firing) %>%
+    ungroup() %>%
+    select(-coherence:-id) %>%
+    as.matrix()
+
+  # 4) remove zeroes
+  avg_firings <- avg_firings[, Rfast::colVars(avg_firings) > 0.01]
+
+  # 5) return eigen values and vectors
+  # unsure if need to center
+  cov_ <- Rfast::cova(avg_firings, center = T)
+  Rfast::eigen.sym(cov_, n_eigen)
+}
+```
+
+```{r}
+eigens_v1 <- get_eigens(t2_v1)
+eigens_v4 <- get_eigens(t2_v4)
+```
+
+I suspect something has gone wrong here since the first eigenvalue is massive compared to the others.
+
+## Meeting notes
+
+-   Natural vs. noise only
+
+-   V1 vs. V4 PC natural vs. noise explanation
+
+-   BrainScore texture dataset
+
+    -   Contains noise, texture, +?
+
+    -   Canatar and Feather et al. may have only looked at natural texture
+
+        -   Variance may be natural vs. noise
+
+## Miscellaneous notes
+
+A commented-out line in `Textures2_familywise_texNat_dprime.m` suggests that the five families used for the behavioral analysis are `[18, 38, 48, 60, 99]`.
+
+`parfor_extract_useTime`: not sure what this is doing
+
+## Source
+
+-   [Zenodo](https://zenodo.org/records/10888270)

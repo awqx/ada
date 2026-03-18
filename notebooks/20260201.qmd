@@ -1,0 +1,131 @@
+---
+title: "ADA 1.0"
+format: html
+---
+
+```{r}
+library(R.matlab)
+library(dplyr)
+library(ggplot2)
+```
+
+
+## Data review
+
+-   `bins`: binned neural recordings, $4600 \times 100 \times 96$, or samples times binned sums times channels
+-   `file.names`: (unsure) an empty string
+-   `run.names`: (unsure) broken references to the raw data
+-   `incl.subj`: subject ID
+-   `save.label`: the stimulus labels
+-   `session.label`: experimental details
+
+In `session.label`, columns are:
+
+1. dummy indexing, 
+2. area recorded, 
+3. age at recording (weeks), and
+4. number of repeats per stimulus. 
+
+## Constants
+
+```{r}
+t2_dir <- "data/raw/lee2024/data/textures2_data/"
+```
+
+## Helper functions
+
+These functions assume that the input data `x` is the loaded MATLAB file. 
+
+```{r}
+source("R/preprocessing.R")
+```
+
+## Example data
+
+```{r}
+t2_v1 <- R.matlab::readMat(paste0(t2_dir, "zz_FC_Textures2_20wk_4reps_1subj.mat"))
+stims <- clean_stimuli(t2_v1)
+firings <- t2_v1$bins
+
+onset_time <- onset_session(
+  firings, list(stims$coherence > 0, stims$coherence == 0)
+)
+times <- onset_time:(onset_time + 14)
+
+# Get responsive channels
+rep_split <- odd_even_reps(stims)
+responsive <- find_channels(firings, rep_split, stims$famsamp, times)
+```
+
+### Between-family summary
+
+```{r}
+blanks <- stims$coherence == 0
+noise  <- stims$coherence == 1
+struct <- stims$coherence == 2
+
+flat_nochannel <- apply(firings[, , ], c(1, 2), sum, na.rm = T)
+```
+
+```{r}
+grp_df <- stims %>%
+  ungroup() %>%
+  select(coherence, family) %>%
+  group_by(coherence, family) %>%
+  mutate(grp = cur_group_id())
+
+grp_ <- unique(grp_df)
+
+family_all_mat <- grouped_rowsums(flat_nochannel, grp_df$grp)
+family_all <- family_all_mat %>%
+  as.data.frame() %>% 
+  mutate(grp = unique(grp_df$grp)) %>%
+  tidyr::gather("time", "firing", -grp) %>%
+  mutate(time = as.integer(gsub("V", "", time))) %>%
+  left_join(grp_, by = "grp") %>%
+  mutate(family = as.factor(family))
+```
+
+```{r}
+family_all %>%
+  filter(coherence == 0) %>%
+  ggplot(aes(x = time, y = firing, color = family)) +
+    geom_line()
+```
+
+```{r}
+family_all %>%
+  filter(coherence == 1) %>%
+  ggplot(aes(x = time, y = firing, color = family)) +
+    geom_line()
+```
+
+```{r}
+family_all %>%
+  filter(coherence == 2) %>%
+  ggplot(aes(x = time, y = firing, color = family)) +
+    geom_line()
+```
+
+```{r}
+family_all %>%
+  filter(coherence == 2) %>%
+  filter(time %in% times) %>%
+  ggplot(aes(x = time, y = firing, color = family)) +
+    geom_line()
+```
+
+### Within-family
+
+
+## Between-region
+
+```{r}
+t2_it <- R.matlab::readMat(paste0(t2_dir, "zz_IT_Textures2_20wk_4reps_1subj.mat"))
+t2_v2 <- R.matlab::readMat(paste0(t2_dir, "zz_V2_Textures2_29wk_4reps_2subj.mat"))
+```
+
+## Questions
+
+1. Are bins overlapping? (or: are )
+2. Stimulus presentation time?

@@ -1,0 +1,174 @@
+---
+title: "Progressive decrease in effective dimensionality of visual cortex regions"
+date: 2026-02-06
+author: Al W. Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+library(R.matlab)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(gt)
+
+knitr::opts_chunk$set(
+  echo = F, warning = F, message = F
+)
+
+source("R/preprocessing.R")
+t2_dir <- "data/raw/lee2024/data/textures2_data/"
+
+theme_set(theme_minimal())
+theme_replace(axis.title = element_text(size = 9))
+```
+
+Advisors: 
+
+- Statistics: Rob Kass
+- External: Jenelle Feather, Assistant Professor in Psychology Department and Neuroscience Institute, CMU. Jenelle is my co-advisor in the Stats-PNC program.
+
+## Introduction
+
+Creating artificial neural networks (ANNs) that are aligned to observed brain activity could provide a testbed to perform neuroscience experiments that are infeasible in living subjects. 
+
+Though strategies exist to quantify brain-ANN similarity [1], it is unclear how the underlying structure of data influences these metrics. Differences in the effective dimensionality of neural responses or model weights, for example, may influence the current approach to similarity scoring. 
+
+Characterizing the dimensionality of brain regions is contentious, with investigators drawing contrasting conclusions about whether the visual cortex is better characterized as high- or low-dimensional [2, 3]. The source of divergence remains unclear, and possible causes include differences in neural recording, task complexity, and choice of statistical method. Furthermore, the effect of dimensionality on model similarity is also controversial, with investigators disagreeing about whether high effective dimensionality drives higher similarity scores [4, 5].
+
+Within this project, I will perform a comprehensive investigation of data collected in the macaque visual cortex [6]. Because researchers presented upwards of 1000 unique stimuli and recorded activity from different visual regions from the same subjects, I anticipate that this data set will contain sufficient detail to address existing questions about neural dimensionality. 
+
+## Data
+
+Lee et al. trained 8 macaque monkeys to fixate on a screen and presented the animals with a passive fixation tasks. The experimenters placed 96-electrode "Utah" recording arrays in 8 macaque monkeys, producing data from visual regions V1, V2, V4, IT, and FC (foveal confluence). For monkeys M2, M3, and M6, a second electrode produced parallel recordings in two visual regions, seen in @tbl-subjects. Lee et al. published the binned spiking data, summed for bins of 10 ms, but omitted the raw spike timing data. 
+
+The monkeys viewed synthetic textures samples with natural structure ("naturalistic") or without structure ("noise") [7]. A subset of monkeys also performed a 4-choice task to discriminate naturalistic and noise samples, though this behavioral data will likely not be relevant for the project. Monkeys viewed images in blocks of 8, with images shown for 100 ms and separated by 100 ms of blank stimulus. Generally, later visual regions show greater relative divergence between noise and naturalistic images, seen in @fig-avg_firings.
+
+```{r}
+#| label: tbl-subjects
+#| tbl-cap: "Description of the macaque monkey subjects and relevant features of the recording data. For monkeys with more than one recording over time, the youngest and oldest age recording, in weeks, is reported as Age 1 and Age 2, respectively."
+
+data.frame(
+  id = paste0("M", c(1:8)), 
+  sex = c("F", "F", "M", "F", "M", "M", "M", "M"), 
+  age_1 = c(17, 16, 16, 27, 17, 184, 184, NA), 
+  age_2 = c(95, 95, 65, 53, 64, 194, 194, NA), 
+  regions = c("V1-V2 border, V4", "V2, V4", "FC, IT", NA, NA, "V1, IT", "IT", "V4")
+) %>%
+  gt() %>%
+  cols_label(
+    id = "Monkey ID", 
+    sex = "Sex", 
+    age_1 = "Age 1", 
+    age_2 = "Age 2",
+    regions = "Region(s)" 
+  )
+```
+
+```{r read matlab files, cache = T, eval = F}
+files <- c(
+  "zz_V1_Textures2_29wk_4reps_1subj", 
+  "zz_V2_Textures2_29wk_4reps_2subj", 
+  "zz_V4_Textures2_29wk_4reps_2subj",
+  "zz_IT_Textures2_20wk_4reps_1subj", 
+  "zz_FC_Textures2_20wk_4reps_1subj"
+)
+
+region_names <- c("V1", "V2", "V4", "IT", "FC")
+
+recordings <- lapply(
+  1:length(files), 
+  function(x) {
+    f <- files[x]
+    message("Reading ", f)
+    matlab <- R.matlab::readMat(paste0(t2_dir, f, ".mat"))
+    stims <- clean_stimuli(matlab)
+    firings <- matlab$bins
+    rm(matlab)
+
+    onset_time <- onset_session(
+      firings, 
+      list(stims$coherence > 0, stims$coherence == 0))
+    message("Onset time: ", onset_time)
+    times <- (onset_time - 2):(onset_time + 15)
+
+    rep_split <- odd_even_reps(stims)
+    responsive <- find_channels(firings, rep_split, stims$famsamp, times)
+    message("No. responsive channels: ", length(responsive))
+
+    keep_idx <- which(stims$family != "13" & stims$coherence != 0)
+    grps <- stims[keep_idx, "coherence"]
+    flat <- apply(firings[keep_idx, , ], c(1, 2), mean, na.rm = T)
+    noise_vs_blank <- apply_rowgroups(
+      flat, grps$coherence, mean, na.rm = T
+    ) %>%
+      as.data.frame() %>%
+      mutate(coherence = unique(grps$coherence)) %>%
+      gather("time", "firing", -coherence) %>%
+      mutate(time = as.integer(gsub("X", "", time)))
+    
+    noise_vs_blank %>%
+      filter(time %in% times) %>%
+      mutate(time = (time - onset_time)) %>%
+      mutate(Image = ifelse(
+        coherence == 1, 
+        "Noise", "Naturalistic"), 
+        region = region_names[x]
+      )
+  }
+)
+
+saveRDS(recordings, "results/20260206/recordings.RDS")
+```
+
+```{r}
+#| label: fig-avg_firings
+#| fig-cap: "Average firing rate over images with naturalistic (red) or noise (blue) structure, separated by region in the visual cortex. In general, later visual regions (V4, IT) tend to show more divergence than early visual regions."
+recordings <- readRDS("data/processed/20260206/recordings.RDS")
+noise_vs_structure <- do.call(rbind, recordings)
+p <- noise_vs_structure %>%
+  mutate(region = factor(region, levels = c("V1", "V2", "V4", "IT", "FC"))) %>%
+  ggplot(aes(x = time, y = firing, color = Image)) + 
+    geom_line() + 
+    facet_wrap(~region, scales = "free_y") + 
+    geom_vline(xintercept = 0, linetype = "dotted", alpha = 0.5) +
+    labs(
+      x = "Time after stimulus (ms)", 
+      y = "Average firing"
+    )
+
+p
+```
+
+```{r, eval = F}
+ggsave("data/processed/20260206/noise_vs_structure.png")
+```
+
+## Sources
+
+1. Schrimpf M, Kubilius J, Lee MJ, Ratan Murty NA, Ajemian R, DiCarlo JJ. Integrative Benchmarking to Advance Neurally Mechanistic Models of Human Intelligence. Neuron. 2020 Nov 11;108(3):413-423. doi: 10.1016/j.neuron.2020.07.040. Epub 2020 Sep 11. PMID: 32918861.
+2. Stringer C, Pachitariu M, Steinmetz N, Carandini M, Harris KD. High-dimensional geometry of population responses in visual cortex. Nature. 2019 Jul;571(7765):361–5. 
+3. Gao P, Trautmann E, Yu B, Santhanam G, Ryu S, Shenoy K, Ganguli S. A theory of multineuronal dimensionality, dynamics and measurement [Internet]. bioRxiv; 2017 [cited 2026 Feb 4]. p. 214262. Available from: https://www.biorxiv.org/content/10.1101/214262v2
+4. Elmoznino E, Bonner MF. High-performing neural network models of visual cortex benefit from high latent dimensionality. PLOS Computational Biology. 2024 Jan 10;20(1):e1011792. 
+5. Canatar A, Feather J, Wakhloo A, Chung S. A Spectral Theory of Neural Prediction and Alignment. Advances in Neural Information Processing Systems. 2023 Dec 15;36:47052–80. 
+6. Lee GM, Deliz CLR, Bushnell BN, Majaj NJ, Movshon JA, Kiorpes L. Developmentally stable representations of naturalistic image structure in macaque visual cortex. Cell Reports [Internet]. 2024 Aug 27 [cited 2025 Oct 31];43(8). Available from: https://www.cell.com/cell-reports/abstract/S2211-1247(24)00863-5
+7. Portilla J, Simoncelli EP. A Parametric Texture Model Based on Joint Statistics of Complex Wavelet Coefficients. International Journal of Computer Vision. 2000 Oct 1;40(1):49–70. 
