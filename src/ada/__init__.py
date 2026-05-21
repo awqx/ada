@@ -1,37 +1,48 @@
-import pkgutil
-import importlib
-import sys
 from .registry import registry
+import sys
 
-# The sub-directories to scan
 _SUB_PACKAGES = ['data', 'io', 'processing']
-__all__ = []
 
-def _automate_imports():
+def __getattr__(name):
     """
-    Crawls modules and detected @registry decorators to populate __all__.
+    Triggered when an attribute (like a registered tool) 
+    is accessed but not yet found in the module namespace.
     """
-    curr  = sys.modules[__name__]
-    tools = []
+    # Trigger discovery only once
+    registry.discover(__name__, _SUB_PACKAGES)
     
-    for sub_pkg in _SUB_PACKAGES:
-        try:
-            pkg_path = f"{__name__}.{sub_pkg}"
-            sub_pkg = importlib.import_module(pkg_path)
+    if name in registry.objects:
+        return registry.objects[name]
+    
+    raise AttributeError(f"module {__name__} has no attribute {name}")
+
+def __dir__():
+    """
+    Ensures that registered tools show up in dir(ada) 
+    and tab-completion in IDEs.
+    """
+    registry.discover(__name__, _SUB_PACKAGES)
+    return list(globals().keys()) + list(registry.objects.keys())
+
+def get_tools():
+    """
+    Public API to get registered objects. 
+    """
+    # This triggers the import of submodules safely
+    tools_dict = registry.discover(__name__, _SUB_PACKAGES)
+    
+    # Optional: If you want them available as ada.tool_name
+    curr = sys.modules[__name__]
+    for name, obj in tools_dict.items():
+        if not hasattr(curr, name):
+            setattr(curr, name, obj)
             
-            # Walk through all .py files in the sub-folder and execute decorators
-            for _, mod_nm, _ in pkgutil.walk_packages(sub_pkg.__path__, sub_pkg.__name__ + "."):
-                importlib.import_module(mod_nm)
+    return list(tools_dict.keys())
 
-                
-            for nm, obj in registry.objects.items():
-                # safety check: don't overwrite if already imported
-                setattr(curr, nm, obj)
-                tools.append(nm)     
-                      
-        except Exception as e:
-            print(f"Warning: Registration failed for {sub_pkg}: {e}")
-
-    return tools
-
-__all__ = _automate_imports()
+if not hasattr(sys, "_ada_importing"):
+    sys._ada_importing = True
+    try:
+        # Only run this if we aren't already in the middle of a nested import
+        registry.discover(__name__, _SUB_PACKAGES)
+    finally:
+        del sys._ada_importing
