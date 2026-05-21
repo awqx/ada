@@ -7,6 +7,10 @@ format: html
 library(R.matlab)
 library(dplyr)
 library(ggplot2)
+
+# temporary workaround for bug001
+root_dir <- "~/github/ada/"
+knitr::opts_knit$set(root.dir = "~/github/ada/")
 ```
 
 
@@ -37,13 +41,15 @@ t2_dir <- "data/raw/lee2024/data/textures2_data/"
 These functions assume that the input data `x` is the loaded MATLAB file. 
 
 ```{r}
-source("R/preprocessing.R")
+source("~/github/ada/R/preprocessing.R")
 ```
 
 ## Example data
 
 ```{r}
-t2_v1 <- R.matlab::readMat(paste0(t2_dir, "zz_FC_Textures2_20wk_4reps_1subj.mat"))
+# bug001
+# t2_v1 <- R.matlab::readMat(paste0(t2_dir, "zz_FC_Textures2_20wk_4reps_1subj.mat"))
+t2_v1 <- R.matlab::readMat(paste0(root_dir, t2_dir, "zz_FC_Textures2_20wk_4reps_1subj.mat"))
 stims <- clean_stimuli(t2_v1)
 firings <- t2_v1$bins
 
