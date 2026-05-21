@@ -1,0 +1,461 @@
+% Options for packages loaded elsewhere
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
+%
+\documentclass[
+  letterpaper,
+  DIV=11,
+  numbers=noendperiod]{scrartcl}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{5}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+% Make \paragraph and \subparagraph free-standing
+\makeatletter
+\ifx\paragraph\undefined\else
+  \let\oldparagraph\paragraph
+  \renewcommand{\paragraph}{
+    \@ifstar
+      \xxxParagraphStar
+      \xxxParagraphNoStar
+  }
+  \newcommand{\xxxParagraphStar}[1]{\oldparagraph*{#1}\mbox{}}
+  \newcommand{\xxxParagraphNoStar}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+  \let\oldsubparagraph\subparagraph
+  \renewcommand{\subparagraph}{
+    \@ifstar
+      \xxxSubParagraphStar
+      \xxxSubParagraphNoStar
+  }
+  \newcommand{\xxxSubParagraphStar}[1]{\oldsubparagraph*{#1}\mbox{}}
+  \newcommand{\xxxSubParagraphNoStar}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+\makeatother
+
+
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+
+
+% definitions for citeproc citations
+\NewDocumentCommand\citeproctext{}{}
+\NewDocumentCommand\citeproc{mm}{%
+  \begingroup\def\citeproctext{#2}\cite{#1}\endgroup}
+\makeatletter
+ % allow citations to break across lines
+ \let\@cite@ofmt\@firstofone
+ % avoid brackets around text for \cite:
+ \def\@biblabel#1{}
+ \def\@cite#1#2{{#1\if@tempswa , #2\fi}}
+\makeatother
+\newlength{\cslhangindent}
+\setlength{\cslhangindent}{1.5em}
+\newlength{\csllabelwidth}
+\setlength{\csllabelwidth}{3em}
+\newenvironment{CSLReferences}[2] % #1 hanging-indent, #2 entry-spacing
+ {\begin{list}{}{%
+  \setlength{\itemindent}{0pt}
+  \setlength{\leftmargin}{0pt}
+  \setlength{\parsep}{0pt}
+  % turn on hanging indent if param 1 is 1
+  \ifodd #1
+   \setlength{\leftmargin}{\cslhangindent}
+   \setlength{\itemindent}{-1\cslhangindent}
+  \fi
+  % set entry spacing
+  \setlength{\itemsep}{#2\baselineskip}}}
+ {\end{list}}
+\usepackage{calc}
+\newcommand{\CSLBlock}[1]{\hfill\break\parbox[t]{\linewidth}{\strut\ignorespaces#1\strut}}
+\newcommand{\CSLLeftMargin}[1]{\parbox[t]{\csllabelwidth}{\strut#1\strut}}
+\newcommand{\CSLRightInline}[1]{\parbox[t]{\linewidth - \csllabelwidth}{\strut#1\strut}}
+\newcommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
+
+
+
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+
+
+ 
+
+
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{longtable}
+\usepackage{colortbl}
+\usepackage{array}
+\usepackage{anyfontsize}
+\usepackage{multirow}
+\usepackage{caption}
+\captionsetup{font=small, labelfont=bf}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1.25ex}
+\KOMAoption{captions}{tableheading}
+\makeatletter
+\@ifpackageloaded{caption}{}{\usepackage{caption}}
+\AtBeginDocument{%
+\ifdefined\contentsname
+  \renewcommand*\contentsname{Table of contents}
+\else
+  \newcommand\contentsname{Table of contents}
+\fi
+\ifdefined\listfigurename
+  \renewcommand*\listfigurename{List of Figures}
+\else
+  \newcommand\listfigurename{List of Figures}
+\fi
+\ifdefined\listtablename
+  \renewcommand*\listtablename{List of Tables}
+\else
+  \newcommand\listtablename{List of Tables}
+\fi
+\ifdefined\figurename
+  \renewcommand*\figurename{Figure}
+\else
+  \newcommand\figurename{Figure}
+\fi
+\ifdefined\tablename
+  \renewcommand*\tablename{Table}
+\else
+  \newcommand\tablename{Table}
+\fi
+}
+\@ifpackageloaded{float}{}{\usepackage{float}}
+\floatstyle{ruled}
+\@ifundefined{c@chapter}{\newfloat{codelisting}{h}{lop}}{\newfloat{codelisting}{h}{lop}[chapter]}
+\floatname{codelisting}{Listing}
+\newcommand*\listoflistings{\listof{codelisting}{List of Listings}}
+\makeatother
+\makeatletter
+\makeatother
+\makeatletter
+\@ifpackageloaded{caption}{}{\usepackage{caption}}
+\@ifpackageloaded{subcaption}{}{\usepackage{subcaption}}
+\makeatother
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={(ADA) Introduction to the Lee et al.~visual cortex recording data},
+  pdfauthor={Al Xin},
+  colorlinks=true,
+  linkcolor={blue},
+  filecolor={Maroon},
+  citecolor={Blue},
+  urlcolor={Blue},
+  pdfcreator={LaTeX via pandoc}}
+
+
+\title{(ADA) Introduction to the Lee et al.~visual cortex recording
+data}
+\author{Al Xin}
+\date{May 21, 2026}
+\begin{document}
+\maketitle
+
+
+\section{Overview}\label{overview}
+
+Data and code are available on
+\href{https://zenodo.org/records/10888270}{Zenodo}
+{[}\citeproc{ref-lee_developmentally_2024}{1}{]}.
+
+\section{Recording details}\label{recording-details}
+
+Lee et al.~included 8 monkeys and provided experimental details in their
+first table, which is recopied in the Appendix
+Section~\ref{sec-recording_table}. Behavioral age ranges are copied in
+Table~\ref{tbl-behavior}, but I will skip discussion of the behavioral
+task for now, with a brief overview in Section~\ref{sec-behavior}. The
+number of visually responsive sites for each area and session can be
+seen in Table~\ref{tbl-sites} (see Section~\ref{sec-active_sites} for
+more on how responsive sites were defined).
+
+The authors implanted a pair of 96 electrode Utah arrays per monkey
+(i.e., a total of 192 channels per subject). Regions were determined
+with anatomical landmarks, physiological features (e.g., response
+latency), and receptive field characteristics. One array implanted on M1
+sat on the border between V1 and V2. For M3, the authors could not
+reliably determine the location and labeled the region as FC (the
+\emph{foveal confluence} of V1, V2 and V4), based on terminology from
+Brewer et al. {[}\citeproc{ref-brewer_visual_2002}{2}{]}.
+
+Lee et al.~implanted arrays twice in M6, with the recording at 221 weeks
+taken from the second implantation. Two monkeys (M4 and M5) only
+underwent behavioral experiments. One monkey (M8) only underwent passive
+fixation recording. Three monkeys (M1, M2, and M3) performed the
+behavioral task prior to passive fixation experiments. Two monkeys (M6
+and M7) were tested cross-sectionally, where passive fixation recordings
+were taken prior to behavioral tests (approx. 30 weeks vs.~190 weeks).
+
+\begin{table}
+
+\caption{\label{tbl-behavior}Behavioral experiment age ranges. No
+behavioral experiments were performed with M8. M6 and M7 were tested
+cross-sectionally after passive fixation experiments.}
+
+\centering{
+
+\fontsize{10.0pt}{13.0pt}\selectfont
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}lll}
+\toprule
+Subject ID & Sex & Age range of behavioral tests (weeks) \\ 
+\midrule\addlinespace[2.5pt]
+M1 & Female & 17, 95 \\ 
+M2 & Female & 16, 95 \\ 
+M3 & Male & 16, 65 \\ 
+M4 & Female & 27, 53 \\ 
+M5 & Male & 17, 64 \\ 
+M6 & Male & 184, 194 \\ 
+M7 & Male & 184, 194 \\ 
+M8 & Male & NA, NA \\ 
+\bottomrule
+\end{tabular*}
+
+}
+
+\end{table}%
+
+\begin{table}
+
+\caption{\label{tbl-sites}Number of active recording sites by region and
+age. Dashes indicate no targeting of the region while zero indicates no
+active sites detected. No recordings were made in M4 and M5.}
+
+\centering{
+
+\fontsize{10.0pt}{12.0pt}\selectfont
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}rrrrrr}
+\toprule
+Age (weeks) & V1 & V2 & V4 & IT & FC \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{M1} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{20A486}{\textcolor[HTML]{FFFFFF}{56}}} & {\cellcolor[HTML]{2E6D8E}{\textcolor[HTML]{FFFFFF}{34}}} & {\cellcolor[HTML]{D5E21A}{\textcolor[HTML]{000000}{90}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+37 & {\cellcolor[HTML]{27AD81}{\textcolor[HTML]{FFFFFF}{60}}} & {\cellcolor[HTML]{2F6B8E}{\textcolor[HTML]{FFFFFF}{33}}} & {\cellcolor[HTML]{DCE318}{\textcolor[HTML]{000000}{91}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+56 & {\cellcolor[HTML]{2AB07F}{\textcolor[HTML]{FFFFFF}{61}}} & {\cellcolor[HTML]{31688E}{\textcolor[HTML]{FFFFFF}{32}}} & {\cellcolor[HTML]{F7E620}{\textcolor[HTML]{000000}{95}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{M2} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{E3E418}{\textcolor[HTML]{000000}{92}}} & {\cellcolor[HTML]{3E4989}{\textcolor[HTML]{FFFFFF}{21}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+37 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{B2DD2D}{\textcolor[HTML]{000000}{85}}} & {\cellcolor[HTML]{23898E}{\textcolor[HTML]{FFFFFF}{45}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+56 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{E3E418}{\textcolor[HTML]{000000}{92}}} & {\cellcolor[HTML]{21A685}{\textcolor[HTML]{FFFFFF}{57}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{M3} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+20 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{297A8E}{\textcolor[HTML]{FFFFFF}{39}}} & {\cellcolor[HTML]{C0DF25}{\textcolor[HTML]{000000}{87}}} \\ 
+31 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{287C8E}{\textcolor[HTML]{FFFFFF}{40}}} & {\cellcolor[HTML]{95D840}{\textcolor[HTML]{000000}{81}}} \\ 
+34 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{1FA187}{\textcolor[HTML]{FFFFFF}{55}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{M6} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+30 & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{33638D}{\textcolor[HTML]{FFFFFF}{30}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+34 & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{20A486}{\textcolor[HTML]{FFFFFF}{56}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+36 & {\cellcolor[HTML]{46307E}{\textcolor[HTML]{FFFFFF}{13}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+221 & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{1F9A8A}{\textcolor[HTML]{FFFFFF}{52}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{M7} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+28 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{32658E}{\textcolor[HTML]{FFFFFF}{31}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+34 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{21908D}{\textcolor[HTML]{FFFFFF}{48}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{M8} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+409 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FDE725}{\textcolor[HTML]{000000}{96}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
+\bottomrule
+\end{tabular*}
+
+}
+
+\end{table}%
+
+\section{Features of the provided electrode
+data}\label{features-of-the-provided-electrode-data}
+
+The provided \href{https://zenodo.org/records/10888270}{Zenodo} data
+files do not contain raw recording data. \textbf{Multiunit threshold
+crossings} were binned into 10 ms windows (Section~\ref{sec-mua}).
+
+\section{Determining visually responsive sites}\label{sec-active_sites}
+
+To find visually responsive sites, Lee et al.~compared responses to
+stimuli or blank images. They averaged the site response separately for
+even and odd repetitions of each stimulus (so averaging across two
+observations twice) then kept sites with a Pearson correlation of
+\(\rho \geq 0.4\).
+
+They subsequently defined the onset time for a site as the first time
+bin with a \(|d'| \geq 0.4\) where the two subsequent windows also
+produced \(|d'| \geq 0.4\) of the same sign (see
+Equation~\ref{eq-dprime} for the definition of \(d'\)). They then
+defined the population onset time as the median onset time across
+visually responsive sites. For downstream analyses, Lee et al.~summed
+responses across the 150 ms window after population onset time.
+
+\begin{equation}\phantomsection\label{eq-dprime}{
+d' = \frac{\mu_1 - \mu_0}{\sqrt{(\sigma^2_1 + \sigma^2_0)/2}}
+}\end{equation}
+
+\section{Questions, concerns, and next steps}\label{sec-discussion}
+
+\subsection{Multiunit threshold crossings}\label{sec-mua}
+
+Single neuron spikes seem more common in dimensionality analyses
+({[}\citeproc{ref-pospisil_revisiting_2025}{3},\citeproc{ref-cowley_stimulus-driven_2016}{4}{]}),
+though I am not sure if there is existing work fully characterizing
+whether this provides meaningful advantages. Some work covers functional
+dimensionality estimation on fMRI data, so I infer that some level of
+signal aggregation does not immediately disqualify this analysis
+{[}\citeproc{ref-ahlheim_estimating_2018}{5}{]}.
+
+\section{Appendix}\label{appendix}
+
+\subsection{Original recording details table}\label{sec-recording_table}
+
+Recording ages marked with \texttt{{[}a{]}} were used in the comparison
+in Figure 4D. Table 1 reports the number of visually responsive sites
+(more on this later). The column ``Behavior'' refers to the age range
+when behavioral tests were administered.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2192}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2192}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2192}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3425}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Subject
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Behavior (wks)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Areas
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Recording ages (weeks; number of sites)
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+M1 (f) & 17--95 & V1-V2 border, V4 & 29 (\emph{n} = 56, 34, 90), 37
+(\emph{n} = 60, 33, 91), 56 (\emph{n} = 61, 32, 95) \\
+M2 (f) & 16--95 & V2, V4 & 29 (\emph{n} = 92, 21), 37{[}a{]} (\emph{n} =
+85, 45), 56 (\emph{n} = 92, 57) \\
+M3 (m) & 16--65 & FC, IT & 20{[}a{]} (\emph{n} = 87, 39), 31 (\emph{n} =
+81, 40), 34 (\emph{n} = 55, 0 FC only) \\
+M4 (f) & 27--53 & N/A & N/A \\
+M5 (m) & 17--64 & N/A & N/A \\
+M6 (m) & 184--194 & V1, IT & 30 (\emph{n} = 0, 30) 34{[}a{]} (\emph{n} =
+0, 56), 36{[}a{]} (\emph{n} = 13, 0) \\
+M6 & (see above) & IT & 221{[}a{]} (\emph{n} = 52) \\
+M7 (m) & 184--194 & IT & 28 (\emph{n} = 31), 34{[}a{]} (\emph{n} =
+48) \\
+M8 (m) & N/A & V4 & 409{[}a{]} (\emph{n} = 96) \\
+\end{longtable}
+
+\subsection{Behavioral task details}\label{sec-behavior}
+
+\subsection{Notes}\label{notes}
+
+\begin{itemize}
+\tightlist
+\item
+  Demean based on blank response
+\item
+\end{itemize}
+
+\phantomsection\label{refs}
+\begin{CSLReferences}{0}{1}
+\bibitem[\citeproctext]{ref-lee_developmentally_2024}
+\CSLLeftMargin{1. }%
+\CSLRightInline{Gerick M. Lee, C. L. Rodríguez Deliz, Brittany N.
+Bushnell, Najib J. Majaj, J. Anthony Movshon, Lynne Kiorpes.
+Developmentally stable representations of naturalistic image structure
+in macaque visual cortex. Cell Reports. 2024 Aug 27;43(8).
+doi:\href{https://doi.org/10.1016/j.celrep.2024.114534}{10.1016/j.celrep.2024.114534}}
+
+\bibitem[\citeproctext]{ref-brewer_visual_2002}
+\CSLLeftMargin{2. }%
+\CSLRightInline{Alyssa A. Brewer, William A. Press, Nikos K. Logothetis,
+Brian A. Wandell. Visual areas in macaque cortex measured using
+functional magnetic resonance imaging. J Neurosci. 2002 Dec
+1;22(23):10416--26.
+doi:\href{https://doi.org/10.1523/JNEUROSCI.22-23-10416.2002}{10.1523/JNEUROSCI.22-23-10416.2002}}
+
+\bibitem[\citeproctext]{ref-pospisil_revisiting_2025}
+\CSLLeftMargin{3. }%
+\CSLRightInline{Dean A. Pospisil, Jonathan W. Pillow. Revisiting the
+high-dimensional geometry of population responses in the visual cortex.
+Proceedings of the National Academy of Sciences. 2025 Nov
+11;122(45):e2506535122.
+doi:\href{https://doi.org/10.1073/pnas.2506535122}{10.1073/pnas.2506535122}}
+
+\bibitem[\citeproctext]{ref-cowley_stimulus-driven_2016}
+\CSLLeftMargin{4. }%
+\CSLRightInline{Benjamin R. Cowley, Matthew A. Smith, Adam Kohn, Byron
+M. Yu. Stimulus-driven population activity patterns in macaque primary
+visual cortex. {PLOS} Computational Biology. 2016 Dec 9;12(12):e1005185.
+doi:\href{https://doi.org/10.1371/journal.pcbi.1005185}{10.1371/journal.pcbi.1005185}}
+
+\bibitem[\citeproctext]{ref-ahlheim_estimating_2018}
+\CSLLeftMargin{5. }%
+\CSLRightInline{Christiane Ahlheim, Bradley C. Love. Estimating the
+functional dimensionality of neural representations. Neuroimage. 2018
+Oct 1;179:51--62.
+doi:\href{https://doi.org/10.1016/j.neuroimage.2018.06.015}{10.1016/j.neuroimage.2018.06.015}}
+
+\end{CSLReferences}
+
+
+
+
+\end{document}

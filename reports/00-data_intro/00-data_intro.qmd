@@ -1,0 +1,250 @@
+---
+title: "(ADA) Introduction to the Lee et al. visual cortex recording data"
+author: "Al Xin"
+date: last-modified
+date-format: MMM D, YYYY
+bibliography: refs.bib
+csl: nlm.csl
+execute:
+  echo: false
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    link-citations: true
+    include-in-header:
+      text: |
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r, message = FALSE, warning = FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggeffects)
+# library(patchwork)
+library(gt)
+# library(gtsummary)
+
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+
+# ggplot settings
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Overview
+
+Lee et al. published and analyzed this dataset in the 2024 *Cell* article "Developmentally stable representations of naturalistic image structure in macaque visual cortex" [@lee_developmentally_2024]. Data and code are available on [Zenodo](https://zenodo.org/records/10888270).
+
+
+
+## Recording details
+
+Lee et al. included 8 monkeys and provided experimental details in their first table, which is recopied in the Appendix @sec-recording_table. Behavioral age ranges are copied in @tbl-behavior, but I will skip discussion of the behavioral task for now, with a brief overview in @sec-behavior. The number of visually responsive sites for each area and session can be seen in @tbl-sites (see @sec-active_sites for more on how responsive sites were defined).
+
+The authors implanted a pair of 96 electrode Utah arrays per monkey (i.e., a total of 192 channels per subject). Regions were determined with anatomical landmarks, physiological features (e.g., response latency), and receptive field characteristics. One array implanted on M1 sat on the border between V1 and V2. For M3, the authors could not reliably determine the location and labeled the region as FC (the *foveal confluence* of V1, V2 and V4), based on terminology from Brewer et al. [@brewer_visual_2002].
+
+Lee et al. implanted arrays twice in M6, with the recording at 221 weeks taken from the second implantation. Two monkeys (M4 and M5) only underwent behavioral experiments. One monkey (M8) only underwent passive fixation recording. Three monkeys (M1, M2, and M3) performed the behavioral task prior to passive fixation experiments. Two monkeys (M6 and M7) were tested cross-sectionally, where passive fixation recordings were taken prior to behavioral tests (approx. 30 weeks vs. 190 weeks).
+
+```{r}
+#| label: tbl-behavior
+#| tbl-cap: Behavioral experiment age ranges. No behavioral experiments were performed with M8. M6 and M7 were tested cross-sectionally after passive fixation experiments.
+
+behavior <- data.frame(
+  id = paste0("M", c(1:8)), 
+  sex = c("f", "f", "m", "f", "m", "m", "m", "m"),
+  beh_l = c(17, 16, 16, 27, 17, 184, 184, NA),
+  beh_u = c(95, 95, 65, 53, 64, 194, 194, NA)) %>%
+  mutate(behavior_range = paste0(beh_l, ", ", beh_u)) %>%
+  mutate(sex = case_when(sex == "f" ~ "Female", sex == "m" ~ "Male")) %>%
+  select(-beh_l, -beh_u)
+behavior %>% 
+  gt() %>%
+  tab_options(table.font.size = px(14)) %>%
+  cols_label(
+    id = "Subject ID", 
+    sex = "Sex", 
+    behavior_range = "Age range of behavioral tests (weeks)")
+```
+
+```{r}
+#| label: tbl-sites
+#| tbl-cap: Number of active recording sites by region and age. Dashes indicate no targeting of the region while zero indicates no active sites detected. No recordings were made in M4 and M5. 
+
+# relist recording info as nested list
+recording_list <- list(
+  M1 = list(
+    ages = c(29, 37, 56),
+    areas = c("V1", "V2", "V4"), 
+    n_sites = list(
+      c(56, 34, 90), 
+      c(60, 33, 91), 
+      c(61, 32, 95))), 
+  M2 = list(
+    ages = c(29, 37, 56), 
+    areas = c("V2", "V4"), 
+    n_sites = list(
+      c(92, 21), 
+      c(85, 45), 
+      c(92, 57))),
+  M3 = list(
+    ages = c(20, 31, 34), 
+    areas = c("FC", "IT"), 
+    n_sites = list(
+      c(87, 39), 
+      c(81, 40), 
+      c(55, 0))),
+  M4 = list(
+    ages = c(-1),
+    areas = c("None"),
+    n_sites = list(c(-1))),
+  M5 = list(
+    ages = c(-1),
+    areas = c("None"),
+    n_sites = list(c(-1))),
+  M6 = list(
+    ages = c(30, 34, 36, 221), 
+    areas = c("V1", "IT"), 
+    n_sites = list(
+      c(0, 30), 
+      c(0, 56), 
+      c(13, 0), 
+      c(0, 52))),
+  M7 = list(
+    ages = c(28, 34), 
+    areas = c("IT"),
+    n_sites = list(c(31), c(48))),
+  M8 = list(
+    ages = c(409), 
+    areas = c("V4"), 
+    n_sites = list(c(96))))
+
+subj_ids <- names(recording_list)
+
+# make a heatmap-like wide table with all recording sites
+areas <- c("V1", "V2", "V4", "IT", "FC")
+
+make_widetable <- function(subj_info, id) {
+  sites_by_area <- matrix(NA, 
+    nrow = length(subj_info$ages), 
+    ncol = length(areas))
+  n_sites <- do.call(rbind, subj_info$n_sites)
+  colnames(n_sites) <- subj_info$areas
+  colnames(sites_by_area) <- areas
+  
+  # fill in available recording sites
+  for (x in subj_info$areas) {
+    area_col <- which(areas == x)
+    if (length(area_col) > 0) # handles area = "None"
+      sites_by_area[, x] <- n_sites[, x]}
+  
+  sites_by_area %>%
+    data.frame() %>%
+    mutate(id = id, age = subj_info$ages, .before = V1) %>%
+    mutate(age = ifelse(age < 0, NA, age))
+}
+
+recording_wide <- subj_ids %>% 
+  lapply(function(x) make_widetable(recording_list[[x]], x)) %>% 
+  do.call(rbind, .)
+
+recording_wide %>%
+  filter(!id %in% c("M4", "M5")) %>%
+  group_by(id) %>%
+  gt() %>%
+  data_color(
+    columns = areas,
+    method = "numeric", 
+    domain = 0:96,
+    palette = "viridis", 
+    na_color = "white"
+  ) %>%
+  sub_missing(columns = c("age", areas), missing_text = "---") %>%
+  tab_options(table.font.size = px(13)) %>%
+  cols_label(id = "Subject ID", age = "Age (weeks)")
+```
+
+```{r recording longtable, eval = F, include = F}
+# even longer table
+# in case needed for plotting
+
+# turn each element into a table
+# each sub-list contains ages, areas, n_sites fields
+make_longtable <- function(subj_info, id) {
+  # creates length(ages) x length(areas) table
+  n_sites <- subj_info$n_sites %>% 
+    do.call(rbind, .) %>%
+    data.frame()
+  colnames(n_sites) <- subj_info$area
+  
+  # creates table with columns id, area, age, and n_sites
+  # number of rows: length(ages) x length(areas)
+  n_sites %>% 
+    mutate(age = subj_info$ages) %>% 
+    pivot_longer(
+      cols = -age, 
+      names_to = "area", 
+      values_to = "n_sites") %>% 
+    relocate(area, .before = age) %>%
+    mutate(id = id, .before = area)
+}
+
+recording_long <- subj_ids %>% 
+  lapply(function(x) make_longtable(recording_list[[x]], x)) %>%
+  do.call(rbind, .)
+```
+
+## Features of the provided electrode data
+
+The provided [Zenodo](https://zenodo.org/records/10888270) data files do not contain raw recording data. **Multiunit threshold crossings** were binned into 10 ms windows (@sec-mua). 
+
+## Determining visually responsive sites {#sec-active_sites}
+
+To find visually responsive sites, Lee et al. compared responses to stimuli or blank images. They averaged the site response separately for even and odd repetitions of each stimulus (so averaging across two observations twice) then kept sites with a Pearson correlation of $\rho \geq 0.4$.  
+
+They subsequently defined the onset time for a site as the first time bin with a $|d'| \geq 0.4$ where the two subsequent windows also produced $|d'| \geq 0.4$ of the same sign (see @eq-dprime for the definition of $d'$). They then defined the population onset time as the median onset time across visually responsive sites. For downstream analyses, Lee et al. summed responses across the 150 ms window after population onset time.  
+
+$$
+d' = \frac{\mu_1 - \mu_0}{\sqrt{(\sigma^2_1 + \sigma^2_0)/2}}
+$$ {#eq-dprime}
+
+## Questions, concerns, and next steps {#sec-discussion}
+
+### Multiunit threshold crossings {#sec-mua}
+
+Single neuron spikes seem more common in dimensionality analyses ([@pospisil_revisiting_2025; @cowley_stimulus-driven_2016]), though I am not sure if there is existing work fully characterizing whether this provides meaningful advantages. Some work covers functional dimensionality estimation on fMRI data, so I infer that some level of signal aggregation does not immediately disqualify this analysis [@ahlheim_estimating_2018].
+
+
+
+
+## Appendix
+
+### Original recording details table {#sec-recording_table}
+
+Recording ages marked with `[a]` were used in the comparison in Figure 4D. Table 1 reports the number of visually responsive sites (more on this later). The column "Behavior" refers to the age range when behavioral tests were administered. 
+
+| Subject | Behavior (wks) | Areas | Recording ages (weeks; number of sites) |
+|----------------|----------------|----------------|-------------------------|
+| M1 (f) | 17–95 | V1-V2 border, V4 | 29 (*n* = 56, 34, 90), 37 (*n* = 60, 33, 91), 56 (*n* = 61, 32, 95) |
+| M2 (f) | 16–95 | V2, V4 | 29 (*n* = 92, 21), 37\[a\] (*n* = 85, 45), 56 (*n* = 92, 57) |
+| M3 (m) | 16–65 | FC, IT | 20\[a\] (*n* = 87, 39), 31 (*n* = 81, 40), 34 (*n* = 55, 0 FC only) |
+| M4 (f) | 27–53 | N/A | N/A |
+| M5 (m) | 17–64 | N/A | N/A |
+| M6 (m) | 184–194 | V1, IT | 30 (*n* = 0, 30) 34\[a\] (*n* = 0, 56), 36\[a\] (*n* = 13, 0) |
+| M6 | (see above) | IT | 221\[a\] (*n* = 52) |
+| M7 (m) | 184–194 | IT | 28 (*n* = 31), 34\[a\] (*n* = 48) |
+| M8 (m) | N/A | V4 | 409\[a\] (*n* = 96) |
+
+### Behavioral task details {#sec-behavior}
+
+### Notes 
+
+- Demean based on blank response
+- 

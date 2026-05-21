@@ -25,31 +25,31 @@ format:
 ---
 
 ```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260212"
+here::i_am(paste0("notebooks/", nb_id, ".qmd"))
+
 library(R.matlab)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(stringr)
 library(gt)
+library(here)
 
-PRJID <- "20260212"
+# knitr::opts_knit$set(root.dir = root_dir)
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
 
-knitr::opts_chunk$set(
-  echo = F, warning = F, message = F
-)
+source(here("R", "preprocessing.R"))
+t2_dir <- here("data", "raw", "lee2024", "data", "textures2_data")
 
-source("R/preprocessing.R")
-t2_dir <- "data/raw/lee2024/data/textures2_data/"
-
-out_dir <- paste0("data/processed/", PRJID, "/")
-res_dir <- paste0("results/", PRJID, "/")
+out_dir <- paste0(here("data", "processed"), "/", nb_id, "/")
+res_dir <- paste0(here("results"), "/", nb_id, "/")
 if (!dir.exists(out_dir)) dir.create(out_dir)
 if (!dir.exists(res_dir)) dir.create(res_dir)
 
 theme_set(theme_minimal())
 theme_replace(axis.title = element_text(size = 9))
 ```
-
 
 ## Data
 
