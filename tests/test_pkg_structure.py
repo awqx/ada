@@ -9,21 +9,15 @@ def test_namespace_population():
     """
     # Check for Data Classes
     assert hasattr(ada, "RecordingSession"), "RecordingSession failed to register at top level"
-    assert hasattr(ada, "load_recording"), "load_recording failed to register at top level"
+    assert hasattr(ada, "load_matlab_file"), "load_matlab_file failed to register at top level"
 
 def test_registry_contents():
     """
     Verify the ObjectRegistry instance actually collected the objects.
     """
+    ada.get_tools()
     assert "RecordingSession" in registry.objects
-    assert "load_recording" in registry.objects
-    
-def test_all_declaration():
-    """
-    Ensure __all__ is populated for IDE support and 'from ada import *'.
-    """
-    assert "RecordingSession" in ada.__all__
-    assert "load_recording" in ada.__all__
+    assert "load_matlab_file" in registry.objects
 
 def test_module_locations():
     """

@@ -31,7 +31,7 @@ def clean_stimuli(stim: np.ndarray) -> np.ndarray:
     )
 
 @registry.register
-def load_recording(f: str) -> RecordingSession: 
+def load_matlab_file(f: str) -> RecordingSession: 
     f_info   = file_info(os.path.basename(f))
     mat_data = loadmat(f, simplify_cells=True)
     return RecordingSession(
@@ -45,7 +45,7 @@ def load_recording(f: str) -> RecordingSession:
     )
 
 @registry.register
-def load_recordings(dir: str, silent: bool = False) -> dict:
+def load_matlab_dir(dir: str, silent: bool = False) -> dict:
     """ 
     Loads entire directory of MATLAB files into a dictionary where file
     names are keys of RecordingSessions.
@@ -57,7 +57,7 @@ def load_recordings(dir: str, silent: bool = False) -> dict:
         f_info = file_info(f)
         f_key = f_info['region'] + '_' + str(f_info['age']) + 'wk'
         try: 
-            recordings[f_key] = load_recording(os.path.join(dir, f))
+            recordings[f_key] = load_matlab_file(os.path.join(dir, f))
             if not silent: 
                 print(f"Loaded {f} as key {f_key}.")
         except Exception as e:
