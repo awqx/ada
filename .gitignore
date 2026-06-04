@@ -1,5 +1,6 @@
 # Large data files
-data/raw/lee2024/
+data/raw/
+data/processed/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -209,3 +210,4 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .Rproj.user
+
