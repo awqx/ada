@@ -1,5 +1,5 @@
 ---
-title: "Clean workthrough of data loading and responsive site detection"
+title: "Loading stimuli labels and MUA data from MATLAB files"
 date: 2026-05-21
 author: Al Xin
 date-format: MMM D, YYYY
@@ -29,237 +29,176 @@ nb_id <- "20260521"
 here::i_am(paste0("notebooks/", nb_id, ".qmd"))
 
 library(R.matlab)
+library(cli)
 library(dplyr)
-library(ggplot2)
 library(tidyr)
 library(stringr)
 library(gt)
 library(here)
+library(qs2)
 
 # knitr::opts_knit$set(root.dir = root_dir)
-knitr::opts_chunk$set(echo = F, warning = F, message = F)
+knitr::opts_chunk$set(warning = F, message = T)
 
 source(here("R", "preprocessing.R"))
 t2_dir <- here("data", "raw", "lee2024", "data", "textures2_data")
+t2_dir <- paste0(t2_dir, "/")
 
 out_dir <- paste0(here("data", "processed"), "/", nb_id, "/")
-res_dir <- paste0(here("results"), "/", nb_id, "/")
+# res_dir <- paste0(here("results"), "/", nb_id, "/")
 if (!dir.exists(out_dir)) dir.create(out_dir)
-if (!dir.exists(res_dir)) dir.create(res_dir)
-
-theme_set(theme_minimal())
-theme_replace(axis.title = element_text(size = 9))
+# if (!dir.exists(res_dir)) dir.create(res_dir)
 ```
 
-## Check for identical stimuli
+## Stimulus labels
 
-I am not sure whether the stimuli in each MAT file is identical. 
+The table of stimuli information contains the family ID, coherence, sample ID, and block placement. Each unique combination of family ID, coherence, and sample ID corresponds to a specific image, and each image is repeated four times in the session. Blank images are arbitrarily labeled with family ID `0` and sample ID `id_blank` from 1 to 100.   
 
-```{r}
-files <- list.files(t2_dir)
-files <- files[1:2]
+Family ID, coherence, and sample ID columns are identical across all files and only need to be saved once. However, there is a column marking the position of the stimulus within the block, which is unique for each session file. I cannot find the order of the blocks in the published data of the blocks. This setup does not generate unique rows because the repetition number of each unique image (defined by the combination of coherence, family, and sample ID) is not recorded in any column and block placement is arbitrary and may be repeated. I assume the repetition number was implicitly captured by the row number, but I am not confident this is the scheme Lee et al. intended.  
 
-stimuli_list <- lapply(
-  files, 
-  function(f) {
-    f_details <- file_info(f)
-    message(
-      "Reading ", f_details$region, " (",
-      f_details$age, " wks, ", 
-      f_details$n_subjects, " subjects)...")
-    
-    matlab <- R.matlab::readMat(paste0(t2_dir, "/", f))
-    clean_stimuli(matlab)
-  }
-)
+### Column details
+
+- `coherence`: `0` when blank, `1` when noisy, `2` when naturalistic. 
+- `family`: `0` when blank, two or three digit integer code otherwise.
+- `id`: `0` when blank, integer from `1` to `15` otherwise. 
+- `id_blank`: integer from `1` to `100` if blank, `0` otherwise. 
+- `repetition`: column constructed from counting the repetition of `coherence`, `family`, and `id` or `id_blank` combo. 
+
+```{r, eval = F}
+# get arbitrary identical stimulus labels
+stims_ref <- list.files(t2_dir) %>%
+  .[1] %>% # arbitrary index
+  paste0(t2_dir, .) %>%
+  R.matlab::readMat() %>%
+  .$save.label %>%
+  data.frame()
+colnames(stims_ref) <- c(
+  "coherence", "family", "id", "coherence_t3", "x5", "id_blank")
+stimuli <- select(stims_ref, -coherence_t3, -x5) %>%
+  group_by(coherence, family, id, id_blank) %>%
+  mutate(repetition = row_number()) %>%
+  ungroup()
 ```
 
-
-```{r}
-files <- list.files(t2_dir)
-
-recordings <- lapply(
-  files, 
-  function(f) {
-    f_details <- file_info(f)
-    if (!silent) 
-      message(
-        "Reading ", f_details$region, " (",
-        f_details$age, " wks, ", 
-        f_details$n_subjects, " subjects)..."
-      )
-    
-    matlab <- R.matlab::readMat(paste0(t2_dir, f))
-    stims <- clean_stimuli(matlab)
-    firings <- matlab$bins
-    rm(matlab)
-
-    # write info
-    # f_name <- paste0(
-    #   f_details$region, "_", 
-    #   f_details$age, "wk_", 
-    #   f_details$n_subjects)
-    f_name <- paste0(f_details$region, "_", f_details$age, "wk")
-    stim_f <- paste0(out_subdirs[2], f_name, ".csv")
-    neur_f <- paste0(out_subdirs[3], f_name, ".rds")
-    write.csv(stims, stim_f)
-    saveRDS(firings, neur_f)
-
-    f_details$stimuli_file <- stim_f
-    f_details$recordings_file <- neur_f
-    
-    if (!silent) message("Saving ", f_name)
-    write.table(
-      yaml::as.yaml(f_details), 
-      paste0(out_subdirs[1], f_name, ".yaml"), 
-      quote = F, row.names = F, col.names = F)
-  }
-)
+```{r, echo = F, eval = F}
+write.csv(stimuli, paste0(out_dir, "stimuli.csv"), row.names = F)
 ```
 
+```{r, echo = F}
+stimuli <- read.csv(paste0(out_dir, "stimuli.csv"))
+```
 
-## Data
-
-
-
-```{r file names, eval = F}
+```{r check stimuli, eval = F, echo = F}
 files <- list.files(t2_dir)
 
-out_subdirs <- paste0(
-  out_dir, 
-  c("session_info", "stimuli", "recordings"), "/")
+get_stims <- function(x) {
+  stims <- data.frame(x$save.label)
+  colnames(stims) <- c(
+    "coherence", "family", "id", "coherence_t3", "block_order", "id_blank")
+  select(stims, -coherence_t3)}
 
-dummy <- lapply(
-  out_subdirs, 
-  function(x) if (!dir.exists(x)) dir.create(x)
-)
+block_list <- list()
+stims_1 <- select(stimuli, -repetition)
 
-silent <- FALSE
-recordings <- lapply(
-  files, 
-  function(f) {
-    f_details <- file_info(f)
-    if (!silent) 
-      message(
-        "Reading ", f_details$region, " (",
-        f_details$age, " wks, ", 
-        f_details$n_subjects, " subjects)..."
-      )
+for (f in files) {
+  f_details <- file_info(f)
+  message("Checking ", f_details$region, " ",f_details$age, " wks...")
+  
+  stims_new <- paste0(t2_dir, "/", f) %>%
+    R.matlab::readMat() %>%
+    get_stims()
+  
+  recording_id <- paste0(f_details$region, "_", f_details$age)
+  block_list[[recording_id]] <- stims_new$block_order
+  
+  message(all.equal(select(stims_new, -block_order), stims_1))}
+
+write.csv(
+  data.frame(block_list),
+  paste0(out_dir, "block_order.csv"), row.names = F)
+```
+
+## Binned multiunit activity
+
+Reading from MATLAB tends to be time-consuming, so it is easier to work with the binned multiunit activity (MUA) pre-extracted and saved in R data files with the quick serialization package `qs2`. The locations of `NA` values were removed. I manually recoded the subject IDs to be consistent with the monkey IDs in the table and arbitrarily labeled the arrays `a` or `b` with the special cases of `a` being shared for the V1/V2 border array on M1 and `c` used for the second implantation of M6 (@tbl-subjects). This separated the 17 original session files into 27 subject files. 
+
+Furthermore, though the published MATLAB files contain the subject IDs, there does not appear to be a mapping of the binned data to the subject. Again, I assume that the mapping is implicitly captured by the ordering and split the binned data into ordered chunks of 96 sites. 
+
+```{r subject recoding, echo = F}
+id_recoding <- c(
+  "KY_n1" = "M1a", "KY_v1" = "M1a", "KY_n2" = "M1b",
+  "LI_n1" = "M2a", "LI_n2" = "M2b",
+  "BB_n1" = "M3a", "BB_n2" = "M3b", 
+  "HT_V4" = "M6a", "HT_IT" = "M6b", "HT_n2" = "M6c", 
+  "HU_n2" = "M7a",
+  "XT_n2" = "M8a")
+
+# data.frame(Recoding = id_recoding) %>% 
+#   tibble::rownames_to_column("Coding") %>% 
+#   pivot_wider(values_from = Recoding, names_from = Coding) %>% 
+#   mutate(`Original` = "Recoding", .before = KY_n1) %>% 
+#   knitr::kable()
+```
+
+```{r}
+#| label: tbl-subjects
+#| tbl-cap: Original MATLAB subject IDs from Lee et al. (left) and new IDs for this project (right).
+
+data.frame(ada_id = id_recoding) %>%
+  tibble::rownames_to_column("lee_id") %>%
+  relocate(lee_id, .before = ada_id) %>%
+  gt() %>%
+  tab_options(table.font.size = px(12)) %>% 
+  cols_label(
+    lee_id = "Lee et al. IDs", 
+    ada_id = "IDs in ADA")
+```
+
+
+```{r mua saving, eval = F}
+n <- 96 # number of channels
+files <- list.files(t2_dir)
+
+for (f in files) {
+  f_details <- file_info(f)
+  dat <- paste0(t2_dir, "/", f) %>% R.matlab::readMat()
+  subj <- as.character(dat$incl.subj)
+  bins <- dat$bins
+  
+  # start messaging block
+  cli_text(paste0(
+    "Session {f_details$region} at {f_details$age} weeks", " ", 
+    "({f_details$n_subjects} subjects)"))
+  ulid <- cli_ul()
+  
+  # walk through subjects in file
+  for (i in 1:length(subj)) {
+    # get the more informative subject code
+    id_code <- id_recoding[subj[i]]
+    # incorporate into file name (qs2 extension)
+    f_name <- paste0(
+      f_details$region, "_", 
+      f_details$age, "_", 
+      id_code, ".qs2")
+    cli_li("{i}/{length(subj)}: saving {subj[i]} to {f_name}...")
+    # message(i, "/", length(subj),  ": ", subj[i], " to ", f_name, "...")
     
-    matlab <- R.matlab::readMat(paste0(t2_dir, f))
-    stims <- clean_stimuli(matlab)
-    firings <- matlab$bins
-    rm(matlab)
-
-    # write info
-    # f_name <- paste0(
-    #   f_details$region, "_", 
-    #   f_details$age, "wk_", 
-    #   f_details$n_subjects)
-    f_name <- paste0(f_details$region, "_", f_details$age, "wk")
-    stim_f <- paste0(out_subdirs[2], f_name, ".csv")
-    neur_f <- paste0(out_subdirs[3], f_name, ".rds")
-    write.csv(stims, stim_f)
-    saveRDS(firings, neur_f)
-
-    f_details$stimuli_file <- stim_f
-    f_details$recordings_file <- neur_f
+    # manually subset the MUA data by number of channels
+    idx_last <- i * n
+    idx_first <- idx_last - n + 1
+    bins_ <- bins[, , idx_first:idx_last]
     
-    if (!silent) message("Saving ", f_name)
-    write.table(
-      yaml::as.yaml(f_details), 
-      paste0(out_subdirs[1], f_name, ".yaml"), 
-      quote = F, row.names = F, col.names = F)
+    # detect missing channels in 3rd dimension
+    missing_sites <- is.na(bins_[1, 1, ])
+    bins_ <- bins_[, , !missing_sites]
+    if (sum(missing_sites) > 0)
+      # message("NOTE: ", sum(missing_sites), " missing channels.")
+      cli_alert_info("Found {sum(missing_sites)} missing sites.")
+    
+    qs_save(bins_, paste0(mua_dir, f_name))
   }
-)
-```
-
-```{r}
-v1_info <- yaml::read_yaml(paste0(out_subdirs[1], "V1_29wk.yaml"))
-v1 <- list(
-  info = v1_info, 
-  stim = read.csv(v1_info$stimuli_file), 
-  rcrd = readRDS(v1_info$recordings_file))
-
-v2_info <- yaml::read_yaml(paste0(out_subdirs[1], "V2_29wk.yaml"))
-v2 <- list(
-  info = v2_info, 
-  stim = read.csv(v2_info$stimuli_file), 
-  rcrd = readRDS(v2_info$recordings_file))
-
-v4_info <- yaml::read_yaml(paste0(out_subdirs[1], "V4_29wk.yaml"))
-v4 <- list(
-  info = v4_info, 
-  stim = read.csv(v4_info$stimuli_file), 
-  rcrd = readRDS(v4_info$recordings_file))
-
-v_list <- list(v1 = v1, v2 = v2, v4 = v4)
-```
-
-## Average firings
-
-```{r}
-N_ARRAY <- 96
-v_list <- v1
-noise_idx <- which(v_list$stim$coherence == 1)
-struc_idx <- which(v_list$stim$coherence == 2)
-n_channels <- v_list$info$n_subjects * N_ARRAY
-
-rcrd_dt <- lapply(1:n_channels, function(x) {
-  tempmat <- v_list$rcrd[, , x]
-  if (mean(is.na(tempmat)) > 0.999) {
-    # message("Channel ", x, " is empty.")
-    return()
-  }
-  temp <- data.table(tempmat)
-  colnames(temp) <- paste0("bin", 1:ncol(temp))
-  temp$channel <- x
-  temp$stimulus <- 1:nrow(temp)
-  dt <- melt(temp, id.vars = c("channel", "stimulus"), variable.name = "bin", value.name = "spikes")
-  dt$bin <- as.numeric(gsub(pattern = "bin", x = dt$bin, replacement = ""))
-  dt
-})
-rcrd_dt <- do.call(rbind, rcrd_dt)
-# fam_avg <- rcrd_dt[ , lapply(.(), sum)]
-```
-
-```{r}
-v4 <- readRDS(paste0(out_dir, "V4_29wk_2s.RDS"))
-keep_idx <- which(stims$coherence > 0)
-grps <- stims[keep_idx, "coherence"]
-flat <- apply(firings[keep_idx, , ], c(1, 2), mean, na.rm = T)
-v4_df <- apply_rowgroups(
-  flat, grps$coherence, mean, na.rm = T
-) %>%
-  as.data.frame() %>%
-  mutate(coherence = unique(grps$coherence)) %>%
-  gather("time", "firing", -coherence) %>%
-  mutate(time = as.integer(gsub("X", "", time)))
-
-v4_df %>%
-  filter(time %in% times) %>%
-  mutate(time = (time - onset_time)) %>%
-  mutate(Image = ifelse(
-    coherence == 1, 
-    "Noise", "Naturalistic"), 
-    region = region_names[x]
-  )
-```
-
-```{r}
-#| label: fig-avg_firings
-#| fig-cap: "Average firing rate over images with naturalistic (red) or noise (blue) structure, separated by region in the visual cortex. In general, later visual regions (V4, IT) tend to show more divergence than early visual regions."
-recordings <- readRDS("data/processed/20260206/recordings.RDS")
-noise_vs_structure <- do.call(rbind, recordings)
-p <- noise_vs_structure %>%
-  mutate(region = factor(region, levels = c("V1", "FC", "V2", "V4", "IT"))) %>%
-  ggplot(aes(x = time, y = firing, color = Image)) + 
-    geom_line() + 
-    facet_wrap(~region, scales = "free_y", nrow = 1) + 
-    geom_vline(xintercept = 0, linetype = "dotted", alpha = 0.5) +
-    labs(
-      x = "Time after stimulus (ms)", 
-      y = "Average firing"
-    )
-ggsave(paste0(res_dir, "noise_vs_structure.png"), p, width = 9, height = 2.5)
+  # close messaging block
+  cli_end(ulid)
+  cli_rule()
+}
 ```
