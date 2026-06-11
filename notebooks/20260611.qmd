@@ -1,0 +1,64 @@
+---
+title: "Split-half PCA reliability on averaged responsive sites"
+date: 2026-06-11
+author: Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260611"
+here::i_am(paste0("notebooks/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- file.path(here("data", "processed"), nb_id)
+res_dir <- file.path(here("results"), nb_id)
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Data overview
+
+The cleaned stimuli (with repetition number) and the session-specific block orders can be read from `data/processed/20260521` and the averaged MUAs saved with `qs2` can be read from `data/processed/20260604`. 
+
+```{r}
+stimuli <- read.csv(
+  file.path(here("data", "processed", "20260521"), "stimuli.csv"))
+mua_avgs <- qs_read(
+  file.path(here("data", "processed", "20260604"), "mua_avgs.qs2"))
+```
+
+The number of responsive sites for each region and age recorded are as follows: 
+
+
+
+## Preprocessing
+

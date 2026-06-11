@@ -1,0 +1,428 @@
+---
+title: "Averaged response to stimuli and detection of visually responsive sites"
+date: 2026-06-04
+author: Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260604"
+here::i_am(paste0("notebooks/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+data_dir <- here("data", "processed", "20260521")
+mua_dir <- here("data", "processed", "20260521", "mua")
+
+out_dir <- file.path(here("data", "processed"), nb_id)
+res_dir <- file.path(here("results"), nb_id)
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+# ggplot
+theme_set(theme_minimal(base_size = 9))
+```
+
+
+## Load previously saved data
+
+The cleaned stimuli (with repetition number) and the session-specific block orders can be read from `data/processed/20260521`. The MUAs saved with `qs2` are saved in `data/processed/20260521/mua`. 
+
+```{r}
+stimuli <- read.csv(file.path(data_dir, "stimuli.csv"))
+block_order <- read.csv(file.path(data_dir, "block_order.csv"))
+```
+
+## PSTHs between developmental stages and region recorded
+
+### Original Lee et al. strategy
+
+Within the MATLAB files, Gerrick Lee writes: 
+
+> *In the manuscript, I combined data for analysis purposes. Figure 3A^[The published version of Lee et al. displays PSTHs in Figure 4A, not 3A.] contains PSTHs from 10 example sites, taken from "stimuli presented in the first position of a stimulus block. To combine data across recordings, the correlations between sites within a recording have to be shuffled - in doing this, the position wrt the stimulus block is lost. Hence, the PSTHs don't exactly match those in Fig 3A. This script takes a subset of the original data (the ten example sites), and plots the PSTHs from the manuscript.*
+
+Though the file `psth_data.mat` contains the data needed to re-plot Figure 4A, I could not find the selection procedure for the sites. The `psth_data.mat` file also contains more than 4600 stimulus labels for each session, which is inconsistent with the other data. Furthermore, for sessions with multiple subjects, the session file only contains one vector of block order. I am unsure if all subjects had stimuli presented in identical order or if data is missing. I will tentatively assume the data is complete, as the block order is described as "pseudorandom" in the first paragraph under "Physiological experiments" (p. 14). If needed, I will reach out to Gerrick Lee directly for formatting questions, though I doubt it is really that important. 
+
+### Attempted reconstruction
+
+I attempted to reproduce the PSTHs by arbitrarily selecting ten sites in each subject and averaging across rows with `block_order` equal to `1`. Unlike Lee et al., I averaged separately by subject, when applicable. The selected sites were probably not randomly sampled but instead only taken from the visually responsive sites, explaining the discrepancy between my reconstruction and Figure 4A. 
+
+```{r, eval = F}
+# psth_dat <- file.path(lee_dir, "psth_data.mat") %>% readMat() %>% .[[1]]
+
+file_psth <- function(f, n_sites = NULL) {
+  f_info <- id_info(f)
+  sesh_id <- paste0(f_info$region, "_", f_info$age)
+  fs <- which(block_order[sesh_id] == 1)
+  
+  mua <- qs_read(file.path(mua_dir, f))
+  # default to average across all available channels, 
+  # else take subsample of size `n_sites`
+  incl_channels <- 1:dim(mua)[3]
+  if (!is.null(n_sites)) 
+    incl_channels <- sample(incl_channels, 10)
+  mua <- mua[fs, 50:72, incl_channels]
+  
+  psths <- lapply(
+    0:2, function(x) apply(mua[stimuli$coherence[fs] == x, , ], 2, mean)) %>% 
+    do.call(cbind, .) %>% 
+    data.frame()
+  colnames(psths) <- c("blank", "noisy", "natur")
+  psths <- psths %>%
+    mutate(t = 10 * c(0:22)) %>%
+    pivot_longer(-t, names_to = "coherence", values_to = "mua") %>%
+    mutate(
+      mua = mua * 100, 
+      region = f_info$region, 
+      age = f_info$age, 
+      subj = f_info$subj) 
+}
+
+set.seed(20260604)
+psths_list <- lapply(list.files(mua_dir), file_psth, n_sites = 10)
+psths <- do.call(rbind, psths_list)
+
+# arbitrary subject numbering
+subj_n <- psths %>%
+  select(region, age, subj) %>%
+  distinct()  %>%
+  group_by(region, age) %>%
+  mutate(subj_n = row_number()) %>%
+  ungroup()
+
+# youngest and oldest session
+age_n <- psths %>%
+  select(region, age) %>%
+  distinct() %>%
+  arrange(desc(-age)) %>%
+  group_by(region) %>%
+  mutate(age_1 = row_number()) %>%
+  ungroup() %>%
+  arrange(desc(age)) %>%
+  group_by(region) %>%
+  mutate(age_2 = row_number()) %>%
+  ungroup() %>% 
+  mutate(first_sesh = age_1 == 1, last_sesh = age_2 == 1) %>%
+  mutate(sesh_order = case_when(
+    first_sesh ~ "first", 
+    last_sesh ~ "last",
+    .default = NA)) %>%
+  select(-age_1:-last_sesh)
+
+# add to original data
+psths <- left_join(psths, subj_n, by = c("region", "age", "subj")) %>%
+  left_join(age_n, by = c("region", "age")) %>%
+  mutate(region = factor(region, levels = c("V1", "V2", "V4", "IT", "FC")))
+
+write.csv(psths, file.path(out_dir, "psths.csv"), row.names = F)
+```
+
+```{r}
+#| label: fig-psth
+#| fig-cap: "Averaged MUA for regions and the youngest (juvenile) and oldest (adult) recording ages, which may differ by region."
+#| fig-width: 6
+#| fig-height: 3.5
+region_levels <- c("V1", "V2", "V4", "IT", "FC")
+psths <- read.csv(file.path(out_dir, "psths.csv"))
+psths %>% 
+  mutate(region = factor(region, levels = region_levels)) %>%
+  filter(!is.na(sesh_order)) %>%
+  filter(subj_n == 1) %>%
+  mutate(coherence = case_when(
+    coherence == "blank" ~ "Blank", 
+    coherence == "natur" ~ "Naturalistic", 
+    coherence == "noisy" ~ "Noisy")) %>%
+  mutate(sesh_order = case_when(
+    sesh_order == "first" ~ "Juvenile", 
+    sesh_order == "last" ~ "Adult")) %>%
+  mutate(sesh_order = factor(sesh_order, levels = c("Juvenile", "Adult"))) %>%
+  ggplot(aes(x = t, y = mua, color = coherence)) + 
+    geom_line() + 
+    facet_grid(sesh_order ~ region, scales = "free") + 
+    labs(
+      color = "Stimulus type",
+      y = "Response rate (imp/s)", 
+      x = "Time from stimulus (ms)") + 
+    theme(
+      legend.position = "bottom", 
+      panel.grid = element_blank())
+ggsave(file.path(res_dir, "psth.png"), width = 6, height = 3.5)
+```
+
+## Visually responsive sites and onset time
+
+Within the supplement of the main paper, Lee et al. writes: 
+
+> *To determine whether a site was visually responsive in a given recording session, we measured the average response separately for even and odd repetitions of each stimulus. We measured the Pearson correlation between these vectors, and used sites with a correlation of 0.4 or greater (the results reported here remained stable across a variety of different metrics and thresholds)...We defined the onset time for a given site as the first deviation above a d’ of ± 0.4, as long as the following 2 windows were also suprathreshold (and of the same sign). The onset time for a given population was the median onset time across visually responsive sites. For most analyses, we then summed responses across the 150 ms window following stimulus onset.*
+
+The $d'$ referenced is Cohon's $d$, calculated as 
+$$
+d' = \dfrac{\mu_1 - \mu_0}{\sqrt{(\sigma^2_1 + \sigma^2_0)/2}},
+$$
+where contrasting blanks and stimuli provides the $d'$ for *sensitivity* and contrasting noisy and naturalistic stimuli provides the $d'$ for *selectivity*. 
+
+The procedure for finding onset site is a bit circular. 
+
+1. Find a temporary onset time, with $d'$ calculated between blanks and stimuli. The search window is 0 to 200 ms after stimulus presentation. If no onset time is found, use 100 ms as a placeholder. 
+2. Determine the responsive sites with signals averaged over a 150 ms window starting at the temporary onset time. 
+3. Find the onset time based on the responsive sites. 
+
+For reference, see line 96 in `repository_textures2_analysis_figures_v0.m`, which calls `Textures2_onset_via_discrim.m`. The responsive sites found with the temporary onset time calculation can be seen in @tbl-resp. The final onset time is then calculated from only the responsive sites and grouped by region and age, seen in @tbl-onset.  
+
+In Step 1, I calculated the temporary onset times separated by array/subject. In contrast, Lee et al. performed all calculations after concatenating recordings from the same region and age (which may contain up to three different arrays/subjects). Thus, the exact number of responsive sites do not match, though they are probably close enough for our purposes.  
+
+```{r, eval = F, include = F}
+library(cli)
+source(here("R", "responsive_sites.R"))
+
+# source(here("R", "onset_time.R"))
+# onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+# onsets <- sapply(
+#   list.files(mua_dir), 
+#   function(f) {
+#     mua <- qs_read(file.path(mua_dir, f))
+#     onset_time(mua[, 50:70, ], onset_grp)})
+
+stimuli <- read.csv(file.path(data_dir, "stimuli.csv"))
+onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+img_grp <- stimuli %>%
+  group_by(coherence, family, id, id_blank) %>%
+  mutate(x = cur_group_id()) %>% .$x
+even_odd <- stimuli$repetition %% 2
+
+mua_files <- list.files(mua_dir)
+mua_ids <- gsub("\\.qs2$", "", mua_files)
+
+split_corrs <- lapply(
+  cli_progress_along(mua_files),
+  function(f) {
+    mua <- qs_read(file.path(mua_dir, mua_files[f]))
+    responsive_sites(mua, onset_grp, img_grp, even_odd)})
+resp_sites <- lapply(split_corrs, function(x) which(x > resp_thresh))
+
+names(split_corrs) <- mua_ids
+names(resp_sites) <- mua_ids
+
+saveRDS(split_corrs, file.path(out_dir, "split_corrs.RDS"))
+saveRDS(resp_sites, file.path(out_dir, "resp_sites.RDS"))
+
+resp_thresh <- 0.4
+region_levels <- c("V1", "V2", "V4", "IT", "FC")
+
+n_resp <- lapply(
+  mua_ids, 
+  function(id) {
+    mua_info <- id_info(id)
+    data.frame(mua_info) %>% 
+      mutate(n_resp = length(resp_sites[[id]]))}) %>%
+  do.call(rbind, .) %>%
+  mutate(region = factor(region, levels = region_levels)) %>%
+  group_by(region) %>%
+  arrange(age, .by_group = T)
+
+write.csv(n_resp, file.path(res_dir, "n_resp.csv"), row.names = F)
+```
+
+```{r}
+#| label: tbl-resp
+#| tbl-cap: Number of responsive sites found for each region and age recorded, with arrays numbered arbitrarily. 
+library(gt)
+
+resp_sites <- read.csv(file.path(res_dir, "n_resp.csv"))
+resp_sites %>%
+  group_by(region, age) %>%
+  mutate(subj_i = paste0("arr_", row_number())) %>%
+  select(-subj) %>%
+  pivot_wider(names_from = subj_i, values_from = n_resp, values_fill = NA) %>% 
+  mutate(total = rowSums(across(where(is.numeric)), na.rm=TRUE)) %>%
+  group_by(region) %>%
+  gt() %>%
+  tab_options(table.font.size = 12) %>%
+  data_color(
+    columns = arr_1:total, 
+    method = "numeric", 
+    domain = 0:80,
+    palette = c("white", "#1a9850"), 
+    na_color = "gray60") %>%
+  cols_label(
+    age = "Age (wks)", 
+    arr_1 = "Array 1", 
+    arr_2 = "Array 2", 
+    arr_3 = "Array 3", 
+    total = "Total sites") 
+```
+
+```{r, eval = F, include = F}
+library(cli)
+source(here("R", "onset_time.R"))
+resp_thresh <- 0.4
+
+mua_files <- list.files(mua_dir)
+mua_ids <- gsub("\\.qs2$", "", mua_files)
+
+split_corrs <- readRDS(file.path(out_dir, "split_corrs.RDS"))
+
+stimuli <- read.csv(file.path(data_dir, "stimuli.csv"))
+onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+
+onsets <- lapply(
+  cli_progress_along(mua_ids), 
+  function(i) {
+    mua_id <- mua_ids[i]
+    resp_idx <- split_corrs[[mua_id]] > resp_thresh
+    
+    if (sum(resp_idx) < 1) return(NA)
+    
+    mua <- qs_read(file.path(mua_dir, paste0(mua_id, ".qs2")))
+    onset_time(mua[, 50:70, resp_idx], onset_grp, all_times = T)})
+
+names(onsets) <- mua_ids
+saveRDS(onsets, file.path(out_dir, "onsets.RDS"))
+```
+
+```{r, eval = F, include = F}
+source(here("R", "str_info.R"))
+default_onset <- 10 
+onsets <- readRDS(file.path(out_dir, "onsets.RDS"))
+
+n_resp <- read.csv(file.path(res_dir, "n_resp.csv")) %>%
+  mutate(region_age = paste0(region, "_", sprintf("%03d", age)))
+
+# group by region and age
+region_age <- list.files(mua_dir) %>%
+  str_extract("^[[:alnum:]]{2}_[[:digit:]]{3}") %>%
+  unique()
+
+onset_df <- lapply(
+  region_age, 
+  function(i) {
+    # onset_ids <- str_subset(names(onsets), i)
+    onset_grp <- do.call(c, onsets[grep(i, names(onsets))])
+    onset <- median(onset_grp, na.rm = T) - 2 
+    onset <- ifelse(is.na(onset), default_onset, floor(onset))
+
+    resp_total <- n_resp %>%
+      filter(region_age == i) %>%
+      .$n_resp %>% sum()
+    
+    data.frame(id_info(i)[-3]) %>%
+      mutate(
+        onset = onset, 
+        n_na = sum(is.na(onset_grp)),
+        min_onset = min(onset_grp, na.rm = T), 
+        max_onset = max(onset_grp, na.rm = T), 
+        resp_total = resp_total) %>%
+      mutate(prop_onset = (resp_total - n_na) / max(resp_total, 1))}) %>%
+  do.call(rbind, .) 
+
+write.csv(onset_df, file.path(res_dir, "onsets.csv"), row.names = F)
+```
+
+
+```{r}
+#| label: tbl-onset
+#| tbl-cap: Calculated onset times, when responsive sites are grouped by region and age. FC at 35 weeks has no responsive sites and therefore defaults to an onset of 100 ms in future calculations. The last column reports the proportion of sites where an onset was found. 
+
+onsets <- read.csv(file.path(res_dir, "onsets.csv"))
+fc_35 <- which(onsets$region == "FC" & onsets$age == 35)
+
+onsets[fc_35, "onset"] <- NA
+onsets[fc_35, "min_onset"] <- NA
+onsets[fc_35, "max_onset"] <- NA
+
+onsets %>%
+  select(-n_na) %>%
+  mutate(region = factor(region, levels = region_levels)) %>%
+  mutate(
+    onset = onset * 10, 
+    min_onset = min_onset * 10, 
+    max_onset = max_onset * 10) %>%
+  rowwise() %>%
+  mutate(prop_onset = max(prop_onset, 0)) %>%
+  group_by(region) %>%
+  arrange(region) %>%
+  gt() %>%
+  tab_options(table.font.size = 12) %>%
+  fmt_number(columns = prop_onset, n_sigfig = 3) %>% 
+  data_color(
+    columns = onset, 
+    method = "numeric", 
+    domain = 0:150,
+    palette = c("white", "#1a9850"), 
+    na_color = "gray60") %>%
+  data_color(
+    columns = prop_onset, 
+    method = "numeric", 
+    domain = 0:1,
+    palette = c("white", "steelblue"), 
+    na_color = "gray60") %>%
+  cols_label(
+    age = "Age (wks)", 
+    onset = "Onset time (ms)", 
+    min_onset = "Min. onset", 
+    max_onset = "Max. onset", 
+    resp_total = "Responsive sites", 
+    prop_onset = "Prop. with onset") 
+```
+
+## Averaged responses
+
+The responsive sites and onset times produce the time-averaged matrices of the responses. I grouped measurements by region and age, i.e., removing the distinction between subjects, and averaged responses in a 150 ms window. 
+
+```{r, eval = F, include = F}
+l_window <- 15
+stim_idx <- 50
+
+onsets <- read.csv(file.path(res_dir, "onsets.csv")) %>%
+  mutate(region_age = paste0(region, "_", sprintf("%03d", age)))
+resp_sites <- readRDS(file.path(out_dir, "resp_sites.RDS"))
+region_age <- unique(onsets$region_age)
+
+mua_files <- list.files(mua_dir)
+mua_ids <- gsub("\\.qs2$", "", mua_files)
+
+mua_avgs <- lapply(
+  cli_progress_along(region_age), 
+  function(x) {
+    i <- region_age[x]
+    onset <- onsets %>% filter(region_age == i) %>% .$onset
+    
+    mua_id <- str_subset(mua_ids, i)
+    
+    lapply(
+      mua_id, 
+      function(id) {
+        mua <- qs_read(file.path(mua_dir, paste0(id, ".qs2")))
+        resps <- resp_sites[[id]]
+        apply(
+          mua[, onset:(onset + l_window - 1) + stim_idx - 1, resps], 
+          c(1, 3), mean)}) %>%
+      do.call(cbind, .)})
+qs_save(mua_avgs, file.path(out_dir, "mua_avgs.qs2"))
+```
