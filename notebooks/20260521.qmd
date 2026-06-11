@@ -28,19 +28,14 @@ format:
 nb_id <- "20260521"
 here::i_am(paste0("notebooks/", nb_id, ".qmd"))
 
-library(R.matlab)
-library(cli)
 library(dplyr)
 library(tidyr)
-library(stringr)
-library(gt)
 library(here)
-library(qs2)
 
 # knitr::opts_knit$set(root.dir = root_dir)
 knitr::opts_chunk$set(warning = F, message = T)
 
-source(here("R", "preprocessing.R"))
+source(here("R", "str_info.R"))
 t2_dir <- here("data", "raw", "lee2024", "data", "textures2_data")
 t2_dir <- paste0(t2_dir, "/")
 
@@ -54,7 +49,9 @@ if (!dir.exists(out_dir)) dir.create(out_dir)
 
 The table of stimuli information contains the family ID, coherence, sample ID, and block placement. Each unique combination of family ID, coherence, and sample ID corresponds to a specific image, and each image is repeated four times in the session. Blank images are arbitrarily labeled with family ID `0` and sample ID `id_blank` from 1 to 100.   
 
-Family ID, coherence, and sample ID columns are identical across all files and only need to be saved once. However, there is a column marking the position of the stimulus within the block, which is unique for each session file. I cannot find the order of the blocks in the published data of the blocks. This setup does not generate unique rows because the repetition number of each unique image (defined by the combination of coherence, family, and sample ID) is not recorded in any column and block placement is arbitrary and may be repeated. I assume the repetition number was implicitly captured by the row number, but I am not confident this is the scheme Lee et al. intended.  
+Family ID, coherence, and sample ID columns are identical across all files and only need to be saved once. However, there is a column marking the position of the stimulus within the block, which is unique for each session file. I cannot find the order of the blocks in the published data of the blocks. There is no difference in how block order is recorded for the sessions with one subject or more than one subject. I think this is a data input error, as block order is mostly ignored in Lee et al., with the exception of the PSTH in Figure 4A only averaging across first-in-block images.
+
+This setup does not generate unique rows because the repetition number of each unique image (defined by the combination of coherence, family, and sample ID) is not recorded in any column and block placement is arbitrary and may be repeated. I assume the repetition number was implicitly captured by the row number, but I am not confident this is the scheme Lee et al. intended.  
 
 ### Column details
 
@@ -144,6 +141,7 @@ id_recoding <- c(
 #| label: tbl-subjects
 #| tbl-cap: Original MATLAB subject IDs from Lee et al. (left) and new IDs for this project (right).
 
+library(gt)
 data.frame(ada_id = id_recoding) %>%
   tibble::rownames_to_column("lee_id") %>%
   relocate(lee_id, .before = ada_id) %>%
@@ -156,6 +154,8 @@ data.frame(ada_id = id_recoding) %>%
 
 
 ```{r mua saving, eval = F}
+library(cli)
+
 n <- 96 # number of channels
 files <- list.files(t2_dir)
 
@@ -178,9 +178,9 @@ for (f in files) {
     # incorporate into file name (qs2 extension)
     f_name <- paste0(
       f_details$region, "_", 
-      f_details$age, "_", 
+      sprintf("%03d", f_details$age), "_", 
       id_code, ".qs2")
-    cli_li("{i}/{length(subj)}: saving {subj[i]} to {f_name}...")
+    cli_li("{i}/{length(subj)}: saving {subj[i]} as {f_name}...")
     # message(i, "/", length(subj),  ": ", subj[i], " to ", f_name, "...")
     
     # manually subset the MUA data by number of channels
@@ -195,7 +195,7 @@ for (f in files) {
       # message("NOTE: ", sum(missing_sites), " missing channels.")
       cli_alert_info("Found {sum(missing_sites)} missing sites.")
     
-    qs_save(bins_, paste0(mua_dir, f_name))
+    qs2::qs_save(bins_, file.path(mua_dir, f_name))
   }
   # close messaging block
   cli_end(ulid)
