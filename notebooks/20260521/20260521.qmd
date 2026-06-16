@@ -7,6 +7,7 @@ format:
   pdf:
     toc: false
     number-sections: true
+    fontsize: 10pt
     colorlinks: true
     indent: true
     keep-tex: true
@@ -26,14 +27,14 @@ format:
 
 ```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
 nb_id <- "20260521"
-here::i_am(paste0("notebooks/", nb_id, ".qmd"))
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
 
 library(dplyr)
 library(tidyr)
 library(here)
 
 # knitr::opts_knit$set(root.dir = root_dir)
-knitr::opts_chunk$set(warning = F, message = T)
+knitr::opts_chunk$set(warning = F, message = T, echo = F)
 
 source(here("R", "str_info.R"))
 t2_dir <- here("data", "raw", "lee2024", "data", "textures2_data")

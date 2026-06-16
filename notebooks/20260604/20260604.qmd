@@ -27,7 +27,7 @@ format:
 
 ```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
 nb_id <- "20260604"
-here::i_am(paste0("notebooks/", nb_id, ".qmd"))
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
 
 library(dplyr)
 library(tidyr)
@@ -396,6 +396,9 @@ onsets %>%
 The responsive sites and onset times produce the time-averaged matrices of the responses. I grouped measurements by region and age, i.e., removing the distinction between subjects, and averaged responses in a 150 ms window. 
 
 ```{r, eval = F, include = F}
+library(cli)
+library(stringr)
+
 l_window <- 15
 stim_idx <- 50
 
@@ -424,5 +427,25 @@ mua_avgs <- lapply(
           mua[, onset:(onset + l_window - 1) + stim_idx - 1, resps], 
           c(1, 3), mean)}) %>%
       do.call(cbind, .)})
+names(mua_avgs) <- region_age
 qs_save(mua_avgs, file.path(out_dir, "mua_avgs.qs2"))
+
+all_sites <- lapply(
+  cli_progress_along(region_age), 
+  function(x) {
+    i <- region_age[x]
+    onset <- onsets %>% filter(region_age == i) %>% .$onset
+    
+    mua_id <- str_subset(mua_ids, i)
+    
+    lapply(
+      mua_id, 
+      function(id) {
+        mua <- qs_read(file.path(mua_dir, paste0(id, ".qs2")))
+        apply(
+          mua[, onset:(onset + l_window - 1) + stim_idx - 1, ], 
+          c(1, 3), mean)}) %>%
+      do.call(cbind, .)})
+names(all_sites) <- region_age
+qs_save(all_sites, file.path(out_dir, "all_sites.qs2"))
 ```

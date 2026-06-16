@@ -5,6 +5,7 @@
 \PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
 %
 \documentclass[
+  10pt,
   letterpaper,
   DIV=11,
   numbers=noendperiod]{scrartcl}
@@ -55,46 +56,6 @@
 \fi
 \makeatother
 
-\usepackage{color}
-\usepackage{fancyvrb}
-\newcommand{\VerbBar}{|}
-\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
-\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
-% Add ',fontsize=\small' for more characters per line
-\usepackage{framed}
-\definecolor{shadecolor}{RGB}{241,243,245}
-\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
-\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
-\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
-\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.40,0.45,0.13}{#1}}
-\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
-\newcommand{\BuiltInTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
-\newcommand{\CharTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
-\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
-\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
-\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
-\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{\textbf{#1}}}
-\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
-\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
-\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
-\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
-\newcommand{\ExtensionTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
-\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
-\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.28,0.35,0.67}{#1}}
-\newcommand{\ImportTok}[1]{\textcolor[rgb]{0.00,0.46,0.62}{#1}}
-\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
-\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{\textbf{#1}}}
-\newcommand{\NormalTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
-\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
-\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
-\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
-\newcommand{\RegionMarkerTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
-\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
-\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
-\newcommand{\StringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
-\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.07,0.07,0.07}{#1}}
-\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
-\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
 
 \usepackage{longtable,booktabs,array}
 \usepackage{calc} % for calculating minipage widths
@@ -228,12 +189,18 @@ Family ID, coherence, and sample ID columns are identical across all
 files and only need to be saved once. However, there is a column marking
 the position of the stimulus within the block, which is unique for each
 session file. I cannot find the order of the blocks in the published
-data of the blocks. This setup does not generate unique rows because the
-repetition number of each unique image (defined by the combination of
-coherence, family, and sample ID) is not recorded in any column and
-block placement is arbitrary and may be repeated. I assume the
-repetition number was implicitly captured by the row number, but I am
-not confident this is the scheme Lee et al.~intended.
+data of the blocks. There is no difference in how block order is
+recorded for the sessions with one subject or more than one subject. I
+think this is a data input error, as block order is mostly ignored in
+Lee et al., with the exception of the PSTH in Figure 4A only averaging
+across first-in-block images.
+
+This setup does not generate unique rows because the repetition number
+of each unique image (defined by the combination of coherence, family,
+and sample ID) is not recorded in any column and block placement is
+arbitrary and may be repeated. I assume the repetition number was
+implicitly captured by the row number, but I am not confident this is
+the scheme Lee et al.~intended.
 
 \subsection{Column details}\label{column-details}
 
@@ -257,24 +224,6 @@ not confident this is the scheme Lee et al.~intended.
   \texttt{id\_blank} combo.
 \end{itemize}
 
-\begin{Shaded}
-\begin{Highlighting}[]
-\CommentTok{\# get arbitrary identical stimulus labels}
-\NormalTok{stims\_ref }\OtherTok{\textless{}{-}} \FunctionTok{list.files}\NormalTok{(t2\_dir) }\SpecialCharTok{\%\textgreater{}\%}
-\NormalTok{  .[}\DecValTok{1}\NormalTok{] }\SpecialCharTok{\%\textgreater{}\%} \CommentTok{\# arbitrary index}
-  \FunctionTok{paste0}\NormalTok{(t2\_dir, .) }\SpecialCharTok{\%\textgreater{}\%}
-\NormalTok{  R.matlab}\SpecialCharTok{::}\FunctionTok{readMat}\NormalTok{() }\SpecialCharTok{\%\textgreater{}\%}
-\NormalTok{  .}\SpecialCharTok{$}\NormalTok{save.label }\SpecialCharTok{\%\textgreater{}\%}
-  \FunctionTok{data.frame}\NormalTok{()}
-\FunctionTok{colnames}\NormalTok{(stims\_ref) }\OtherTok{\textless{}{-}} \FunctionTok{c}\NormalTok{(}
-  \StringTok{"coherence"}\NormalTok{, }\StringTok{"family"}\NormalTok{, }\StringTok{"id"}\NormalTok{, }\StringTok{"coherence\_t3"}\NormalTok{, }\StringTok{"x5"}\NormalTok{, }\StringTok{"id\_blank"}\NormalTok{)}
-\NormalTok{stimuli }\OtherTok{\textless{}{-}} \FunctionTok{select}\NormalTok{(stims\_ref, }\SpecialCharTok{{-}}\NormalTok{coherence\_t3, }\SpecialCharTok{{-}}\NormalTok{x5) }\SpecialCharTok{\%\textgreater{}\%}
-  \FunctionTok{group\_by}\NormalTok{(coherence, family, id, id\_blank) }\SpecialCharTok{\%\textgreater{}\%}
-  \FunctionTok{mutate}\NormalTok{(}\AttributeTok{repetition =} \FunctionTok{row\_number}\NormalTok{()) }\SpecialCharTok{\%\textgreater{}\%}
-  \FunctionTok{ungroup}\NormalTok{()}
-\end{Highlighting}
-\end{Shaded}
-
 \section{Binned multiunit activity}\label{binned-multiunit-activity}
 
 Reading from MATLAB tends to be time-consuming, so it is easier to work
@@ -292,19 +241,6 @@ Furthermore, though the published MATLAB files contain the subject IDs,
 there does not appear to be a mapping of the binned data to the subject.
 Again, I assume that the mapping is implicitly captured by the ordering
 and split the binned data into ordered chunks of 96 sites.
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\FunctionTok{data.frame}\NormalTok{(}\AttributeTok{ada\_id =}\NormalTok{ id\_recoding) }\SpecialCharTok{\%\textgreater{}\%}
-\NormalTok{  tibble}\SpecialCharTok{::}\FunctionTok{rownames\_to\_column}\NormalTok{(}\StringTok{"lee\_id"}\NormalTok{) }\SpecialCharTok{\%\textgreater{}\%}
-  \FunctionTok{relocate}\NormalTok{(lee\_id, }\AttributeTok{.before =}\NormalTok{ ada\_id) }\SpecialCharTok{\%\textgreater{}\%}
-  \FunctionTok{gt}\NormalTok{() }\SpecialCharTok{\%\textgreater{}\%}
-  \FunctionTok{tab\_options}\NormalTok{(}\AttributeTok{table.font.size =} \FunctionTok{px}\NormalTok{(}\DecValTok{12}\NormalTok{)) }\SpecialCharTok{\%\textgreater{}\%} 
-  \FunctionTok{cols\_label}\NormalTok{(}
-    \AttributeTok{lee\_id =} \StringTok{"Lee et al. IDs"}\NormalTok{, }
-    \AttributeTok{ada\_id =} \StringTok{"IDs in ADA"}\NormalTok{)}
-\end{Highlighting}
-\end{Shaded}
 
 \begin{table}
 
@@ -336,57 +272,6 @@ XT\_n2 & M8a \\
 }
 
 \end{table}%
-
-\begin{Shaded}
-\begin{Highlighting}[]
-\NormalTok{n }\OtherTok{\textless{}{-}} \DecValTok{96} \CommentTok{\# number of channels}
-\NormalTok{files }\OtherTok{\textless{}{-}} \FunctionTok{list.files}\NormalTok{(t2\_dir)}
-
-\ControlFlowTok{for}\NormalTok{ (f }\ControlFlowTok{in}\NormalTok{ files) \{}
-\NormalTok{  f\_details }\OtherTok{\textless{}{-}} \FunctionTok{file\_info}\NormalTok{(f)}
-\NormalTok{  dat }\OtherTok{\textless{}{-}} \FunctionTok{paste0}\NormalTok{(t2\_dir, }\StringTok{"/"}\NormalTok{, f) }\SpecialCharTok{\%\textgreater{}\%}\NormalTok{ R.matlab}\SpecialCharTok{::}\FunctionTok{readMat}\NormalTok{()}
-\NormalTok{  subj }\OtherTok{\textless{}{-}} \FunctionTok{as.character}\NormalTok{(dat}\SpecialCharTok{$}\NormalTok{incl.subj)}
-\NormalTok{  bins }\OtherTok{\textless{}{-}}\NormalTok{ dat}\SpecialCharTok{$}\NormalTok{bins}
-  
-  \CommentTok{\# start messaging block}
-  \FunctionTok{cli\_text}\NormalTok{(}\FunctionTok{paste0}\NormalTok{(}
-    \StringTok{"Session \{f\_details$region\} at \{f\_details$age\} weeks"}\NormalTok{, }\StringTok{" "}\NormalTok{, }
-    \StringTok{"(\{f\_details$n\_subjects\} subjects)"}\NormalTok{))}
-\NormalTok{  ulid }\OtherTok{\textless{}{-}} \FunctionTok{cli\_ul}\NormalTok{()}
-  
-  \CommentTok{\# walk through subjects in file}
-  \ControlFlowTok{for}\NormalTok{ (i }\ControlFlowTok{in} \DecValTok{1}\SpecialCharTok{:}\FunctionTok{length}\NormalTok{(subj)) \{}
-    \CommentTok{\# get the more informative subject code}
-\NormalTok{    id\_code }\OtherTok{\textless{}{-}}\NormalTok{ id\_recoding[subj[i]]}
-    \CommentTok{\# incorporate into file name (qs2 extension)}
-\NormalTok{    f\_name }\OtherTok{\textless{}{-}} \FunctionTok{paste0}\NormalTok{(}
-\NormalTok{      f\_details}\SpecialCharTok{$}\NormalTok{region, }\StringTok{"\_"}\NormalTok{, }
-\NormalTok{      f\_details}\SpecialCharTok{$}\NormalTok{age, }\StringTok{"\_"}\NormalTok{, }
-\NormalTok{      id\_code, }\StringTok{".qs2"}\NormalTok{)}
-    \FunctionTok{cli\_li}\NormalTok{(}\StringTok{"\{i\}/\{length(subj)\}: saving \{subj[i]\} to \{f\_name\}..."}\NormalTok{)}
-    \CommentTok{\# message(i, "/", length(subj),  ": ", subj[i], " to ", f\_name, "...")}
-    
-    \CommentTok{\# manually subset the MUA data by number of channels}
-\NormalTok{    idx\_last }\OtherTok{\textless{}{-}}\NormalTok{ i }\SpecialCharTok{*}\NormalTok{ n}
-\NormalTok{    idx\_first }\OtherTok{\textless{}{-}}\NormalTok{ idx\_last }\SpecialCharTok{{-}}\NormalTok{ n }\SpecialCharTok{+} \DecValTok{1}
-\NormalTok{    bins\_ }\OtherTok{\textless{}{-}}\NormalTok{ bins[, , idx\_first}\SpecialCharTok{:}\NormalTok{idx\_last]}
-    
-    \CommentTok{\# detect missing channels in 3rd dimension}
-\NormalTok{    missing\_sites }\OtherTok{\textless{}{-}} \FunctionTok{is.na}\NormalTok{(bins\_[}\DecValTok{1}\NormalTok{, }\DecValTok{1}\NormalTok{, ])}
-\NormalTok{    bins\_ }\OtherTok{\textless{}{-}}\NormalTok{ bins\_[, , }\SpecialCharTok{!}\NormalTok{missing\_sites]}
-    \ControlFlowTok{if}\NormalTok{ (}\FunctionTok{sum}\NormalTok{(missing\_sites) }\SpecialCharTok{\textgreater{}} \DecValTok{0}\NormalTok{)}
-      \CommentTok{\# message("NOTE: ", sum(missing\_sites), " missing channels.")}
-      \FunctionTok{cli\_alert\_info}\NormalTok{(}\StringTok{"Found \{sum(missing\_sites)\} missing sites."}\NormalTok{)}
-    
-    \FunctionTok{qs\_save}\NormalTok{(bins\_, }\FunctionTok{paste0}\NormalTok{(mua\_dir, f\_name))}
-\NormalTok{  \}}
-  \CommentTok{\# close messaging block}
-  \FunctionTok{cli\_end}\NormalTok{(ulid)}
-  \FunctionTok{cli\_rule}\NormalTok{()}
-\NormalTok{\}}
-\end{Highlighting}
-\end{Shaded}
-
 
 
 
