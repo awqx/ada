@@ -410,7 +410,7 @@ region_age <- unique(onsets$region_age)
 mua_files <- list.files(mua_dir)
 mua_ids <- gsub("\\.qs2$", "", mua_files)
 
-mua_avgs <- lapply(
+resp <- lapply(
   cli_progress_along(region_age), 
   function(x) {
     i <- region_age[x]
@@ -427,8 +427,8 @@ mua_avgs <- lapply(
           mua[, onset:(onset + l_window - 1) + stim_idx - 1, resps], 
           c(1, 3), mean)}) %>%
       do.call(cbind, .)})
-names(mua_avgs) <- region_age
-qs_save(mua_avgs, file.path(out_dir, "mua_avgs.qs2"))
+names(resp) <- region_age
+qs_save(resp, file.path(out_dir, "resp.qs2"))
 
 all_sites <- lapply(
   cli_progress_along(region_age), 
@@ -447,5 +447,94 @@ all_sites <- lapply(
           c(1, 3), mean)}) %>%
       do.call(cbind, .)})
 names(all_sites) <- region_age
+
 qs_save(all_sites, file.path(out_dir, "all_sites.qs2"))
 ```
+
+```{r staged averages, eval = F, include = F}
+library(cli)
+library(stringr)
+
+l_window <- 5
+l_skip <- 5
+stim_idx <- 50
+
+onsets <- read.csv(file.path(res_dir, "onsets.csv")) %>%
+  mutate(region_age = paste0(region, "_", sprintf("%03d", age)))
+resp_sites <- readRDS(file.path(out_dir, "resp_sites.RDS"))
+region_age <- unique(onsets$region_age)
+
+mua_files <- list.files(mua_dir)
+mua_ids <- gsub("\\.qs2$", "", mua_files)
+
+resp_stages <- lapply(
+  cli_progress_along(region_age), 
+  function(x) {
+    i <- region_age[x]
+    onset <- onsets %>% filter(region_age == i) %>% .$onset
+    
+    mua_id <- str_subset(mua_ids, i)
+    
+    early <- lapply(
+      mua_id, 
+      function(id) {
+        mua <- qs_read(file.path(mua_dir, paste0(id, ".qs2")))
+        resps <- resp_sites[[id]]
+        apply(
+          mua[, onset:(onset + l_window - 1) + stim_idx - 1, resps], 
+          c(1, 3), mean)}) %>%
+      do.call(cbind, .)
+    
+    late <- lapply(
+      mua_id, 
+      function(id) {
+        mua <- qs_read(file.path(mua_dir, paste0(id, ".qs2")))
+        resps <- resp_sites[[id]]
+        apply(
+          mua[, onset:(onset + l_window - 1) + stim_idx + l_window + l_skip - 1, resps], 
+          c(1, 3), mean)}) %>%
+      do.call(cbind, .)
+      
+    list(early = early, late = late)})
+resp_stages_early <- lapply(resp_stages, function(x) x[["early"]])
+resp_stages_late <- lapply(resp_stages, function(x) x[["late"]])
+qs_save(
+  list(early = resp_stages_early, late = resp_stages_late),
+  file.path(out_dir, "resp_stages.qs2"))
+
+all_sites_stages <- lapply(
+  cli_progress_along(region_age), 
+  function(x) {
+    i <- region_age[x]
+    onset <- onsets %>% filter(region_age == i) %>% .$onset
+    
+    mua_id <- str_subset(mua_ids, i)
+    
+    early <- lapply(
+      mua_id, 
+      function(id) {
+        mua <- qs_read(file.path(mua_dir, paste0(id, ".qs2")))
+        apply(
+          mua[, onset:(onset + l_window - 1) + stim_idx - 1, ], 
+          c(1, 3), mean)}) %>%
+      do.call(cbind, .)
+    
+     late <- lapply(
+      mua_id, 
+      function(id) {
+        mua <- qs_read(file.path(mua_dir, paste0(id, ".qs2")))
+        apply(
+          mua[, onset:(onset + l_window - 1) + stim_idx + l_window + l_skip - 1, ], 
+          c(1, 3), mean)}) %>%
+      do.call(cbind, .)
+     
+    list(early = early, late = late)})
+all_sites_stages_early <- lapply(
+  all_sites_stages, function(x) x[["early"]])
+all_sites_stages_late <- lapply(
+  all_sites_stages, function(x) x[["late"]])
+qs_save(
+  list(early = all_sites_stages_early, late = all_sites_stages_late),
+  file.path(out_dir, "all_sites_stages.qs2"))
+```
+

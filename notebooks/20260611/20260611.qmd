@@ -45,6 +45,120 @@ if (!dir.exists(res_dir)) dir.create(res_dir)
 theme_set(theme_minimal(base_size = 9))
 ```
 
+```{r helpers}
+# Forms the image groups and even-odd splits given the indices of stimuli to include
+get_grps <- function(incl_idx) {
+  stim <- stimuli[incl_idx, ]
+  img_grp <- stim %>%
+    group_by(coherence, family, id, id_blank) %>%
+    mutate(x = cur_group_id()) %>% .$x
+  even_odd <- stim$repetition %% 2
+  list(incl_idx, img_grp, even_odd)
+}
+
+# wrapper for getting PCA results formatted
+pca_res <- function(mua, incl_idx, grp_idx, split_idx) {
+  res <- lapply(
+    cli_progress_along(mua), 
+    function(i) {
+      x <- mua[[i]][incl_idx, ]
+      split_half_pca(x, grp_idx, split_idx)
+    })
+  
+  names(res) <- names(mua) 
+  
+  df <- lapply(
+    names(mua), 
+    function(x) {
+      res[[x]] %>%
+        split_pca_df() %>%
+        mutate(id = x, .before = n_pcs)}) %>%
+    do.call(rbind, .) %>%
+    mutate(region = id_info(id)$region, age = id_info(id)$age)
+    
+  list(res = res, df = df)
+}
+
+plot_pca <- function(
+  pca_df, 
+  pca_label, 
+  x_pcs = scaled_pcs,
+  use_linetype = F,
+  var_linetype = data_type,
+  truncate_pcs = 96
+) {
+  s_order <- pca_df %>%
+    select(region, age, n_pcs) %>%
+    group_by(region, age) %>%
+    summarize(n_pcs = max(n_pcs), .groups = "drop_last") %>%
+    mutate(s_order = row_number()) %>%
+    select(-n_pcs)
+
+  if (!use_linetype) {
+    temp <- pca_df %>%
+      filter(n_pcs <= truncate_pcs) %>%
+      select(region, {{ x_pcs }}, trn_var_prop, tst_rsq, age)
+  } else {
+    temp <- pca_df %>%
+      filter(n_pcs <= truncate_pcs) %>%
+      select(region, {{ x_pcs }}, trn_var_prop, tst_rsq, age, {{ var_linetype }})
+  }
+  
+  temp <- temp %>%
+    left_join(s_order, by = c("region", "age")) %>%
+    rename(Train = trn_var_prop, Test = tst_rsq) %>%
+    pivot_longer(
+      Train:Test, 
+      names_to = "data_split", 
+      values_to = "var_prop") %>%
+    mutate(age = factor(age))
+  
+  # can switch to tst_rsq_prop to visualize better
+  p <- ggplot(temp) +
+    facet_grid(region ~ s_order) + 
+    geom_hline(yintercept = 0) + 
+    labs(y = "Proportion of variance explained", color = "Split") + 
+    geom_text(
+      data = pca_label,
+      size = 2.5,
+      hjust = -0.1, 
+      vjust = 1.1,
+      mapping = aes(x = -Inf, y = Inf, label = label)) + 
+    theme(
+      legend.position = "bottom", 
+      strip.text.x = element_blank(), 
+      panel.grid = element_blank()) + 
+    scale_y_continuous(breaks = 0.25 * 0:4)
+  
+  if (!use_linetype) {
+    p + geom_line(aes(
+      x = {{ x_pcs }},
+      y = var_prop,
+      color = data_split)) + 
+      scale_x_continuous(breaks = seq(0.0, 1.0, by = 0.2))
+  } else {
+    p + geom_line(aes(
+      x = {{ x_pcs }},
+      y = var_prop,
+      linetype = {{ var_linetype }}, 
+      color = data_split)) + 
+    scale_x_continuous(breaks = 32 * 0:3)
+  }
+}
+
+save_pca <- function(res, out_dir, res_dir, filename) {
+  saveRDS(
+    res[["res"]], 
+    file.path(
+      out_dir, paste0(filename, ".RDS")))
+  write.csv(
+    res[["df"]], 
+    file.path(res_dir, paste0(filename, ".csv")), 
+    row.names = F)
+}
+```
+
+
 ## Data overview
 
 The number of responsive sites for each region and age recorded are in @tbl-resp. Within this document, recordings from the foveal confluence (FC) were omitted. 
@@ -79,7 +193,6 @@ resp_sites %>%
     total = "Total sites") 
 ```
 
-
 ## Procedures
 
 ### Mean-centering neurons
@@ -88,17 +201,58 @@ The column means (corresponding to the mean response of a neuron averaged across
 
 ### Split half PCA
 
-Recordings were split into odd (training) and even (testing) repetitions of each unique image stimulus. Repetitions of the same stimulus were averaged. PCA was performed on the training set with `prcomp()`. The test set was then projected onto the PCs. The test signal was then reconstructed with $1, 2, \dots, n$ PCs, where $n$ was the number of responsive sites for a region/age. The proportion of variance explained for the training set was calculated by cumulative sums of the PCA eigenvalues, scaled by the overall sum. The proportion of variance explained for the test set was reported with a standard $R^2$ calculation. In some cases, the proportion of the variance of the test set was rescaled by the maximum $R^2$ to allow better visual comparison with the training set.  
+Recordings were split into odd (training) and even (testing) repetitions of each unique image stimulus. Repetitions of the same stimulus were averaged. PCA was performed on the training set with `prcomp()`. The test set was then projected onto the PCs. The test signal was then reconstructed with $1, 2, \dots, n$ PCs, where $n$ was the number of responsive sites for a region/age. 
+
+I found the proportion of variance explained for the training set with cumulative sums of the PCA eigenvalues, scaled by the overall sum. For the test set, I reported the proportion of variance explained with a standard $R^2$ calculation. 
+
+```{r, eval = F, echo = T}
+# ...
+x_pca_trn <- prcomp(x_splits[[1]], center = F)
+trn_pcs <- x_pca_trn$rotation
+
+tst_scores <- predict(x_pca_trn, x_splits[[2]])
+tst_loadings <- tst_scores %*% t(trn_pcs)
+
+trn_var <- x_pca_trn$sdev ^ 2
+tst_rsq <- sapply(
+  1:ncol(trn_pcs),
+  function(i) {
+    tst_loadings <- tst_scores[, 1:i] %*% t(trn_pcs[, 1:i])
+    data.frame(
+      tst_true = matrix(x_splits[[2]], ncol = 1),
+      tst_pred = matrix(tst_loadings, ncol = 1)) %>%
+        lm(tst_true ~ tst_pred, .) %>%
+        summary() %>%
+        .$r.squared })
+trn_var_prop <- cumsum(trn_var) / sum(trn_var)
+# ...
+```
 
 ## Results
 
-### Non-blank stimuli
+### Different stimuli subsets and included channels
 
-The split half PCA procedure follows the same logic as split half correlation. However, unlike correlation, blank stimuli were removed. In @fig-pca_nonblank, the variance explained for the test set was rescaled to a maximum of 1 to allow for comparison with the variance explained in training. Furthermore, the number of included PCs has been scaled to the proportion of total PCs. IT appears to have a flatter eigenspectrum, though this might be an artifact of the low number of responsive sites/PCs. For all regions and sessions, the test set line is above the training set line, indicative of a lower effective dimensionality for some definitions. 
+The split half PCA procedure follows the same logic as split half correlation. However, unlike correlation, blank stimuli were removed. For this analysis, I ran the split half PCA procedure with 1) all non-blank stimuli, 2) noisy stimuli, and 3) naturalistic stimuli. 
 
-### Separate noisy and naturalistic stimuli
+I also compared performance on only responsive sites vs. all available sites. For figures with only responsive sites, the number of included PCs has been scaled to the proportion of total PCs. For figures with all available sites, I did not alter the scale of the number of PCs, but I did truncate graphs to the first 96 PCs, corresponding to the number of channels on a single array. 
 
-When the stimuli are separated into the noisy and naturalistic stimuli prior to calculating split half PCA, the training and test set cumulative variances are much closer between the training and test set for V2 and V4, indicating better reliability. The number of PCs to explain 90% of the variance (or proportion of the maximum amount of variance explained for the test set) for non-blank stimuli, noisy stimuli, and naturalistic stimuli can be found in @tbl-pca. Generally, fewer PCs are needed to explain 90% of the variance of the test set when the stimuli are separated into the noisy/naturalistic categories.
+The number of PCs to explain 90% of maximum test set R-squared for non-blank stimuli, noisy stimuli, and naturalistic stimuli can be found in @tbl-pca (in analyses with only responsive sites).The maximum test set R-squared can be found in @tbl-pca_rsq.
+
+### R-squared mostly consistent with Lee et al.'s results
+
+The R-squared trends in @tbl-pca seem consistent with [Lee et al.](https://doi.org/10.1016/j.celrep.2024.114534) finding that V4 and V2 have the best discriminability between noisy and naturalistic stimuli in LDA. That is, the higher reconstructed R-squareds reflect more usable information in those recordings. 
+
+### IT flatter, V4 peakier
+
+IT appears to have a flatter eigenspectrum in @fig_pca, though this might be an artifact of the low number of responsive sites/PCs. The analysis with all available plots might be helpful for region-age combinations with a small number of responsive sites. These plots show a clear plateau where the training PCs only capture noise in the test set. Instead of the 90% variance explained threshold, a better metric may be the location of the elbow where the plateau begins (not yet calculated).   
+
+The eigenspectrum of V4 seems consistently "peakier", with more weight on earlier eigenvalues. There appears to be a trend where V1 is flattest, V4 is peakiest, and V2 is in-between. Next steps can explore this more. 
+
+### Worse reconstruction of noisy stimuli
+
+In @fig-pca, on the test set, naturalistic-only stimuli to have better reconstruction than non-blank, which in turn is better than noisy-only stimuli. (I double-checked that the centering of columns occurred *after* subsetting the stimuli type). This trend probably implies that the noisy texture stimuli produced more noise in the signal response. 
+
+Generally, fewer PCs are needed to explain 90% of the variance of the test set when the stimuli only include the noisy or naturalistic stimuli. Noisy-only stimuli tend to require fewer PCs than naturalistic stimuli. 
 
 ```{r, eval = F, include = F}
 library(cli)
@@ -107,111 +261,22 @@ source(here("R", "str_info.R"))
 
 stimuli <- read.csv(here("data", "processed", "20260521", "stimuli.csv"))
 mua_avgs <- qs_read(
-  file.path(here("data", "processed", "20260604"), "mua_avgs.qs2"))
+  file.path(here("data", "processed", "20260604"), "resp.qs2"))
 mua_avgs <- mua_avgs[!grepl("FC", names(mua_avgs))]
 mua_ids <- names(mua_avgs)
 
-blank_idx <- stimuli$coherence == 0
-stim <- stimuli[!blank_idx, ]
-img_grp <- stim %>%
-  group_by(coherence, family, id, id_blank) %>%
-  mutate(x = cur_group_id()) %>% .$x
-even_odd <- stim$repetition %% 2
+nonblank_idxs <- get_grps(stimuli$coherence != 0)
 
-pca_nonblank <- lapply(
-  cli_progress_along(mua_avgs), 
-  function(i) {
-    x <- mua_avgs[[i]][!blank_idx, ]
-    split_half_pca(x, img_grp, even_odd)
-  }
-)
+nonblank <- pca_res(
+  mua_avgs, 
+  incl_idx = nonblank_idxs[[1]], 
+  grp_idx = nonblank_idxs[[2]], 
+  split_idx = nonblank_idxs[[3]])
 
-names(pca_nonblank) <- names(mua_avgs)
-
-nonblank <- lapply(
-  names(pca_nonblank), 
-  function(x) {
-    pca_nonblank[[x]] %>%
-      split_pca_df() %>%
-      mutate(id = x, .before = n_pcs)}) %>%
-  do.call(rbind, .)
-
-saveRDS(pca_nonblank, file.path(out_dir, "pca_nonblank.RDS"))
-write.csv(nonblank, file.path(res_dir, "pca_nonblank.csv"), row.names = F)
-```
-
-```{r, include = F, eval = F}
-#| label: fig-pca_ex
-#| fig-cap: Example comparison between the variance explained by PCs on the train and test split for V4 at 56 weeks. 
-#| fig-width: 4
-#| fig-height: 2.5
-nonblank <- read.csv(file.path(res_dir, "pca_nonblank.csv"))
-
-x <- "V4_056"
-scale <- nonblank %>% 
-  filter(id == x) %>%
-  .$tst_rsq %>%
-  max()
-nonblank %>% 
-  filter(id == x) %>%
-  ggplot(aes(x = n_pcs, y = trn_var_prop)) +
-    geom_line(aes(color = "Train")) + 
-    geom_line(aes(y = tst_rsq / scale, color = "Test")) +
-    scale_y_continuous(sec.axis = sec_axis(
-      ~.*scale, name = "Variance explained (test)")) + 
-    labs(
-      x = "Number of PCs", 
-      y = "Variance explained (train)", 
-      title = "V4, 56 wks",
-      color = "")
-```
-
-```{r}
-#| label: fig-pca_nonblank
-#| fig-cap: Comparisons between the variance explained by the principal components for the training and test set, organized by region (rows) and by session (columns). The proportion of variance explained for the test set has been rescaled. 
-#| fig-width: 5
-#| fig-height: 4
-source(here("R", "str_info.R"))
-nonblank <- read.csv(file.path(res_dir, "pca_nonblank.csv")) %>%
-  mutate(region = id_info(id)$region, age = id_info(id)$age)
-
-session_order <- nonblank %>%
-  select(region, age, n_pcs) %>%
-  group_by(region, age) %>%
-  summarize(n_pcs = max(n_pcs), .groups = "drop_last") %>%
-  mutate(session_order = row_number()) 
-
-session_label <- session_order %>%
-  mutate(label = paste0(age, " wk (", n_pcs, " PCs)"))
-
-nonblank %>%
-  select(region, scaled_pcs, trn_var_prop, tst_rsq_prop, age) %>%
-  left_join(session_order, by = c("region", "age")) %>%
-  rename(Train = trn_var_prop, Test = tst_rsq_prop) %>%
-  pivot_longer(Train:Test, names_to = "data_split", values_to = "var_prop") %>%
-  mutate(
-    age = factor(age), 
-    region = factor(region, levels = c("V1", "V2", "V4", "IT"))) %>%
-  ggplot() +
-    facet_grid(region ~ session_order) + 
-    geom_line(aes(x = scaled_pcs, y = var_prop, color = data_split)) + 
-    labs(
-      title = "Split-half PCA for non-blank stimuli on responsive sites",
-      x = "Proportion of PCs", 
-      y = "Proportion of variance explained", 
-      color = "Split") + 
-    scale_y_continuous(limits = c(0.18, 1.2)) + 
-    geom_text(
-      data = session_label,
-      size = 2.5,
-      hjust = -0.1, 
-      vjust = 0,
-      mapping = aes(x = 0, y = 1, label = label)) + 
-    theme(
-      legend.position = "bottom", 
-      axis.text = element_blank(), 
-      strip.text.x = element_blank(), 
-      panel.grid = element_blank())
+# saveRDS(nonblank[["res"]], file.path(out_dir, "nonblank.RDS"))
+# write.csv(
+#   nonblank[["df"]], file.path(res_dir, "nonblank.csv"), row.names = F)
+save_pca(nonblank, out_dir, res_dir, "nonblank_resp")
 ```
 
 ```{r, eval = F, include = F}
@@ -221,152 +286,129 @@ source(here("R", "str_info.R"))
 
 stimuli <- read.csv(here("data", "processed", "20260521", "stimuli.csv"))
 mua_avgs <- qs_read(
-  file.path(here("data", "processed", "20260604"), "mua_avgs.qs2"))
+  file.path(here("data", "processed", "20260604"), "resp.qs2"))
 mua_avgs <- mua_avgs[!grepl("FC", names(mua_avgs))]
 mua_ids <- names(mua_avgs)
 
-noisy_idx <- stimuli$coherence == 1
-stim <- stimuli[noisy_idx, ]
-img_grp <- stim %>%
-  group_by(coherence, family, id, id_blank) %>%
-  mutate(x = cur_group_id()) %>% .$x
-even_odd <- stim$repetition %% 2
+noisy_idxs <- get_idxs(stimuli$coherence == 1)
 
-pca_noisy <- lapply(
-  cli_progress_along(mua_avgs), 
-  function(i) {
-    x <- mua_avgs[[i]][noisy_idx, ]
-    split_half_pca(x, img_grp, even_odd)})
+noisy <- pca_res(
+  mua_avgs, 
+  incl_idx = noisy_idxs[[1]], 
+  grp_idx = noisy_idxs[[2]], 
+  split_idx = noisy_idxs[[3]])
 
-names(pca_noisy) <- names(mua_avgs)
-
-noisy <- lapply(
-  names(pca_noisy), 
-  function(x) {
-    pca_noisy[[x]] %>%
-      split_pca_df() %>%
-      mutate(id = x, .before = n_pcs)}) %>%
-  do.call(rbind, .)
-
-saveRDS(pca_noisy, file.path(out_dir, "pca_noisy.RDS"))
-write.csv(noisy, file.path(res_dir, "pca_noisy.csv"), row.names = F)
+save_pca(noisy, out_dir, res_dir, "noisy_resp")
 
 # naturalistic stimuli
 
-natur_idx <- stimuli$coherence == 2
-stim <- stimuli[natur_idx, ]
-img_grp <- stim %>%
-  group_by(coherence, family, id, id_blank) %>%
-  mutate(x = cur_group_id()) %>% .$x
-even_odd <- stim$repetition %% 2
+natur_idxs <- get_idxs(stimuli$coherence == 2)
 
-pca_natur <- lapply(
-  cli_progress_along(mua_avgs), 
-  function(i) {
-    x <- mua_avgs[[i]][natur_idx, ]
-    split_half_pca(x, img_grp, even_odd)})
+natur <- pca_res(
+  mua_avgs, 
+  incl_idx = natur_idxs[[1]], 
+  grp_idx = natur_idxs[[2]], 
+  split_idx = natur_idxs[[3]])
 
-names(pca_natur) <- names(mua_avgs)
+save_pca(natur, out_dir, res_dir, "natur_resp")
 
-natur <- lapply(
-  names(pca_natur), 
-  function(x) {
-    pca_natur[[x]] %>%
-      split_pca_df() %>%
-      mutate(id = x, .before = n_pcs)}) %>%
-  do.call(rbind, .)
+# all sites
 
-saveRDS(pca_natur, file.path(out_dir, "pca_natur.RDS"))
-write.csv(natur, file.path(res_dir, "pca_natur.csv"), row.names = F)
+all_sites <- qs_read(
+  file.path(here("data", "processed", "20260604"), "all_sites.qs2"))
+all_sites <- all_sites[!grepl("FC", names(all_sites))]
+mua_ids <- names(all_sites)
+
+nonblank_all_sites <- pca_res(
+  all_sites, nonblank_idxs[[1]], nonblank_idxs[[2]], nonblank_idxs[[3]])
+save_pca(nonblank_all_sites, out_dir, res_dir, "nonblank_all_sites")
+
+noisy_all_sites <- pca_res(
+  all_sites, noisy_idxs[[1]], noisy_idxs[[2]], noisy_idxs[[3]])
+save_pca(noisy_all_sites, out_dir, res_dir, "noisy_all_sites")
+
+natur_all_sites <- pca_res(
+  all_sites, natur_idxs[[1]], natur_idxs[[2]], natur_idxs[[3]])
+save_pca(natur_all_sites, out_dir, res_dir, "natur_all_sites")
 ```
 
 ```{r}
-#| label: fig-pca_coherence
-#| fig-cap: Same as previous figure, but noisy stimuli are in the top section and naturalistic stimuli are in the bottom. 
-#| fig-width: 5
+#| label: fig-pca
+#| fig-cap: Comparisons between the variance explained by the principal components for the training and test set, organized by region (rows) and by session (columns). For responsive sites (top), the x-axis is rescaled for each subplot, and the true number of PCs is in parentheses. For all sites (bottom), the x-axis scale is consistent, but truncated to 96 sites.
+#| fig-width: 5.5
 #| fig-height: 8
-
 library(patchwork)
+source(here("R", "str_info.R"))
+pca_types <- c("nonblank", "noisy", "natur")
 
-noisy <- read.csv(file.path(res_dir, "pca_noisy.csv"))
-natur <- read.csv(file.path(res_dir, "pca_natur.csv"))
+resp <- lapply(
+  pca_types, 
+  function(x) {
+    read.csv(file.path(res_dir, paste0(x, "_resp.csv"))) %>%
+      mutate(data_type = x)}) %>%
+  do.call(rbind, .) %>%
+  mutate(data_type = recode(
+    data_type,
+    natur = "Natur.", 
+    noisy = "Noisy", 
+    nonblank = "Non-blank")) %>%
+  mutate(data_type = factor(data_type)) %>%
+  mutate(data_type = relevel(data_type, ref = "Non-blank"))
 
-p_noisy <- noisy %>%
-  mutate(region = id_info(id)$region, age = id_info(id)$age) %>%
-  select(region, scaled_pcs, trn_var_prop, tst_rsq_prop, age) %>%
-  left_join(session_order, by = c("region", "age")) %>%
-  rename(Train = trn_var_prop, Test = tst_rsq_prop) %>%
-  pivot_longer(Train:Test, names_to = "data_split", values_to = "var_prop") %>%
-  mutate(
-    age = factor(age), 
-    region = factor(region, levels = c("V1", "V2", "V4", "IT"))) %>%
-  ggplot() +
-    facet_grid(region ~ session_order) + 
-    geom_line(aes(x = scaled_pcs, y = var_prop, color = data_split)) + 
-    labs(
-      title = "Noisy stimuli",
-      x = "", 
-      y = "Proportion of variance explained", 
-      color = "Split") + 
-    scale_y_continuous(limits = c(0, 1.2)) + 
-    geom_text(
-      data = session_label,
-      size = 2.5,
-      hjust = -0.1, 
-      vjust = 0,
-      mapping = aes(x = 0, y = 1, label = label)) + 
-    theme(
-      legend.position = "none", 
-      axis.text = element_blank(), 
-      strip.text.x = element_blank(), 
-      panel.grid = element_blank())
+resp_label <- resp %>%
+  select(region, age, n_pcs) %>%
+  group_by(region, age) %>%
+  summarize(n_pcs = max(n_pcs), .groups = "drop_last") %>%
+  mutate(s_order = row_number()) %>%
+  mutate(label = paste0(age, " w (", n_pcs, " PCs)"))
 
-p_natur <- natur %>%
-  mutate(region = id_info(id)$region, age = id_info(id)$age) %>%
-  select(region, scaled_pcs, trn_var_prop, tst_rsq_prop, age) %>%
-  left_join(session_order, by = c("region", "age")) %>%
-  rename(Train = trn_var_prop, Test = tst_rsq_prop) %>%
-  pivot_longer(Train:Test, names_to = "data_split", values_to = "var_prop") %>%
-  mutate(
-    age = factor(age), 
-    region = factor(region, levels = c("V1", "V2", "V4", "IT"))) %>%
-  ggplot() +
-    facet_grid(region ~ session_order) + 
-    geom_line(aes(x = scaled_pcs, y = var_prop, color = data_split)) + 
-    labs(
-      title = "Naturalistic stimuli",
-      x = "Proportion of PCs", 
-      y = "Proportion of variance explained", 
-      color = "Split") + 
-    scale_y_continuous(limits = c(0, 1.2)) + 
-    geom_text(
-      data = session_label,
-      size = 2.5,
-      hjust = -0.1, 
-      vjust = 0,
-      mapping = aes(x = 0, y = 1, label = label)) + 
-    theme(
-      legend.position = "bottom", 
-      axis.text = element_blank(), 
-      strip.text.x = element_blank(), 
-      panel.grid = element_blank())
+p_resp <- plot_pca(resp, resp_label, use_linetype = T) + 
+  labs(
+    linetype = "Stim.", 
+    x = "Proportion of PCs", 
+    title = "Responsive sites only")
 
-p_noisy + p_natur + plot_layout(ncol = 1)
+all_sites <- lapply(
+  pca_types, 
+  function(x) {
+    read.csv(file.path(res_dir, paste0(x, "_all_sites.csv"))) %>%
+      mutate(data_type = x)}) %>%
+  do.call(rbind, .) %>%
+  mutate(data_type = recode(
+    data_type,
+    natur = "Natur.", 
+    noisy = "Noisy", 
+    nonblank = "Non-blank")) %>%
+  mutate(data_type = factor(data_type)) %>%
+  mutate(data_type = relevel(data_type, ref = "Non-blank"))
+
+all_label <- all_sites %>%
+  select(region, age, n_pcs) %>%
+  group_by(region, age) %>%
+  summarize(n_pcs = max(n_pcs), .groups = "drop_last") %>%
+  mutate(s_order = row_number()) %>%
+  mutate(label = paste0(age, " w (", n_pcs, " PCs)"))
+
+p_all <- plot_pca(all_sites, all_label, x_pcs = n_pcs, use_linetype = T) + 
+  labs(
+    x = "Number of PCs (up to 96)", 
+    linetype = "Stim.", 
+    title = "All recorded sites")
+
+p_resp + p_all + plot_layout(ncol = 1)
 ```
-
 
 ```{r}
 #| label: tbl-pca
-#| tbl-cap: Number of PCs to explain 90% of the variance (scaled to proportion for test set). Non-blank (NB), noisy (Ns), naturalistic (Nt). 
-
+#| tbl-cap: Number of PCs to explain 90% of the variance (scaled to proportion for test set) in responsive sites. Non-blank (NB), noisy (Ns), naturalistic (Nt). 
+library(gt)
 thresh <- 0.9
-
 pca_types <- c("nonblank", "noisy", "natur")
 
 pcs_threshold <- lapply(
   pca_types, 
   function(f) {
-    read.csv(file.path(res_dir, paste0("pca_", f, ".csv"))) %>%
+    read.csv(file.path(res_dir, paste0(f, "_resp.csv"))) %>%
       group_by(id) %>%
       mutate(
         trn_pcs = trn_var_prop > thresh, 
@@ -390,18 +432,267 @@ pcs_threshold %>%
   group_by(region) %>%
   gt() %>%
     tab_options(table.font.size = 12) %>%
+    tab_spanner(
+      label = "Train", 
+      columns = vars(trn_pcs_nonblank, trn_pcs_natur, trn_pcs_noisy)) %>%
+    tab_spanner(
+      label = "Test", 
+      columns = vars(tst_pcs_nonblank, tst_pcs_natur, tst_pcs_noisy)) %>%
     cols_label(
       age = "Age (weeks)",
-      trn_pcs_nonblank = "Train (NB)", 
-      tst_pcs_nonblank = "Test (NB)",
-      trn_pcs_noisy = "Train (Ns)", 
-      tst_pcs_noisy = "Test (Ns)",
-      trn_pcs_natur = "Train (Nt)", 
-      tst_pcs_natur = "Test (Nt)",
+      trn_pcs_nonblank = "NB", 
+      tst_pcs_nonblank = "NB",
+      trn_pcs_noisy = "Ns", 
+      tst_pcs_noisy = "Ns",
+      trn_pcs_natur = "Nt", 
+      tst_pcs_natur = "Nt",
       n_pcs = "Total PCs")
 ```
 
+```{r}
+source(here("R", "str_info.R"))
+
+pca_combos <- expand.grid(
+  data_type = c("nonblank", "noisy", "natur"), 
+  sites = c("all", "resp"))
+pca_combos[] <- lapply(pca_combos, as.character)
+
+rsq <- lapply(
+  1:nrow(pca_combos), 
+  function(i) {
+    f <- paste(pca_combos[i, ], collapse = "_")
+    pcas <- readRDS(file.path(out_dir, paste0(f, ".RDS")))
+    rsq <- sapply(pcas, function(x) max(x$tst_rsq))
+    data.frame(rsq = rsq) %>%
+      tibble::rownames_to_column("id") %>%
+      mutate(
+        region = id_info(id)$region, 
+        age = id_info(id)$age,
+        data_type = pca_combos[i, "data_type"], 
+        sites = pca_combos[i, "sites"],
+        .before = rsq) %>%
+      select(-id)
+  }
+) %>%
+  do.call(rbind, .)
+
+write.csv(rsq, file.path(res_dir, "rsq.csv"), row.names = F)
+```
+
+
+```{r}
+#| label: tbl-pca_rsq
+#| tbl-cap: Maximum R-squared for split half PCA on all sites and responsive sites only. Non-blank (NB), noisy (Ns), naturalistic (Nt). 
+library(gt)
+rsq <- read.csv(file.path(res_dir, "rsq.csv"))
+
+rsq_l <- min(rsq$rsq) - 0.01
+rsq_u <- max(rsq$rsq) + 0.01
+
+rsq %>% 
+  pivot_wider(names_from = c("data_type", "sites"), values_from = "rsq") %>%
+  group_by(region) %>%
+  gt() %>%
+    tab_options(table.font.size = 12) %>%
+    fmt_number(nonblank_all:natur_resp, decimals = 3) %>%
+    data_color(
+      columns = nonblank_all:natur_resp, 
+      method = "numeric", 
+      domain = c(rsq_l, rsq_u),
+      palette = c("white", "#1a9850"), 
+      na_color = "gray60") %>%
+    tab_spanner(
+      label = "All sites", 
+      columns = vars(nonblank_all, natur_all, noisy_all)) %>%
+    tab_spanner(
+      label = "Responsive sites", 
+      columns = vars(nonblank_resp, natur_resp, noisy_resp)) %>%
+    cols_label(
+      age = "Age (weeks)",
+      nonblank_all = "NB", 
+      nonblank_resp = "NB",
+      noisy_all = "Ns", 
+      noisy_resp = "Ns",
+      natur_all = "Nt", 
+      natur_resp = "Nt")
+```
+
+### Averages in early and late windows after onset
+
+Out of curiosity, I also created @fig-pca_stages, which contains the plots of explained variance when the signal average is taken for 50 ms after onset ("early") or 100-150 ms after onset ("late"). Since averages are taken after onset time calculation, the "early" and "late" windows were different for each region (corresponding to rows in @fig-pca_stages).  I did not spot any consistent or notable differences in the curves for the training set, so they are omitted for clarity. 
+
+The order of reconstruction performance, from worst to best, tends to go from early to late to full window. Eigenspectra tend to be consistent with stimulus set, regardless of the window where averages are taken. 
+
+I don't have a confident explanation as to why the slopes of the eigenspectra after the elbow are different for the stimulus types or even a guess as to whether it's that important. It might reflect the split-half correlation/self-consistency of neurons, though I would need to check this against the learned PCs. 
+
+```{r pca combos}
+pca_combos <- expand.grid(
+  data_type = c("nonblank", "noisy", "natur"), 
+  sites = c("all", "resp"), 
+  stage = c("early", "late"))
+pca_combos[] <- lapply(pca_combos, as.character)
+```
+
+```{r, eval = F, include = F}
+library(cli)
+source(here("R", "split_half_pca.R"))
+source(here("R", "str_info.R"))
+
+stimuli <- read.csv(here("data", "processed", "20260521", "stimuli.csv"))
+all_sites_stages <- qs_read(
+  file.path(
+    here("data", "processed", "20260604"), "all_sites_stages.qs2"))
+resp_stages <- qs_read(
+  file.path(here("data", "processed", "20260604"), "resp_stages.qs2"))
+non_fc <- !grepl("FC", names(resp_stages[["early"]]))
+mua_ids <- names(resp_stages)
+
+idxs_list <- list(
+  nonblank = nonblank_idxs, 
+  noisy = noisy_idxs, 
+  natur = natur_idxs)
+dat_list <- list(
+  all = all_sites_stages, 
+  resp = resp_stages)
+
+run_pca_combos <- function() {
+  cli_progress_bar("PCA combos", total = nrow(pca_combos))
+  
+  for (i in 1:nrow(pca_combos)) {
+    idxs <- idxs_list[[pca_combos[i, "data_type"]]]
+    dat <- dat_list[[pca_combos[i, "sites"]]][[pca_combos[i, "stage"]]][non_fc]
+    res <- pca_res(dat, idxs[[1]], idxs[[2]], idxs[[3]])
+    save_pca(
+      res, 
+      file.path(out_dir, "stages"),
+      file.path(res_dir, "stages"),
+      paste(pca_combos[i, ], collapse = "_"))
+  }
+  
+  cli_progress_done()
+}
+
+run_pca_combos()
+```
+
+```{r}
+#| label: fig-pca_stages
+#| fig-cap: Comparison of proportion of variance explained for data with only responsive sites (top) and all recorded sites (bottom). Colors indicate whether averages were taken 0-50 ms after onset or 100-150 ms after onset. Training set PCA results omitted. Number of sites for each subplot is in parentheses. 
+#| fig-width: 5.5
+#| fig-height: 8
+
+pca_stages <- lapply(
+  1:nrow(pca_combos), 
+  function(i) {
+    f <- paste(pca_combos[i, ], collapse = "_")
+    read.csv(file.path(res_dir, "stages", paste0(f, ".csv"))) %>%
+      mutate(
+        sites = pca_combos[i, "sites"], 
+        stage = pca_combos[i, "stage"], 
+        data_type = pca_combos[i, "data_type"]) }) %>%
+  do.call(rbind, .) %>%
+  mutate(
+    data_type = recode(data_type,
+      natur = "Natur.", 
+      noisy = "Noisy", 
+      nonblank = "Non-blank"),
+    stage = recode(stage, early = "Early", late = "Late")) %>%
+  mutate(data_type = factor(data_type)) %>%
+  mutate(data_type = relevel(data_type, ref = "Non-blank"))
+
+temp <- rbind(
+  resp %>% mutate(sites = "resp"), 
+  all_sites %>% mutate(sites = "all")) %>%
+  mutate(stage = "Full") %>%
+  rbind(., pca_stages) %>%
+  mutate(stage = factor(stage)) %>%
+  mutate(stage = relevel(stage, ref = "Full"))
+
+s_order <- pca_stages %>%
+  select(region, age, n_pcs) %>%
+  group_by(region, age) %>%
+  summarize(n_pcs = max(n_pcs), .groups = "drop_last") %>%
+  mutate(s_order = row_number()) %>%
+  select(-n_pcs)
+
+p_all <- temp %>%
+  filter(sites == "all", n_pcs <= 96) %>%
+  left_join(s_order, by = c("region", "age")) %>%
+  ggplot() + 
+    geom_line(aes(x = n_pcs, y = tst_rsq, color = stage, linetype = data_type)) + 
+    facet_grid(rows = vars(region), cols = vars(s_order)) + 
+    geom_hline(yintercept = 0) + 
+    # scale_color_discrete(palette = palette.colors()[2:3]) + 
+    geom_text(
+      data = all_label,
+      size = 2.5,
+      hjust = -0.1, 
+      vjust = 1.1,
+      mapping = aes(x = -Inf, y = Inf, label = label)) + 
+    theme(
+      legend.position = "bottom", 
+      # axis.text = element_blank(), 
+      strip.text.x = element_blank(), 
+      panel.grid = element_blank()) + 
+    scale_x_continuous(breaks = 32 * 0:3) + 
+    labs(
+      title = "All recorded sites",
+      color = "Stage", 
+      linetype = "Stim.",
+      x = "Number of PCs", 
+      y = "R-squared on test")
+p_resp <- temp %>%
+  filter(sites == "resp") %>%
+  left_join(s_order, by = c("region", "age")) %>%
+  ggplot() + 
+    geom_line(aes(x = scaled_pcs, y = tst_rsq, color = stage, linetype = data_type)) + 
+    facet_grid(rows = vars(region), cols = vars(s_order)) + 
+    geom_hline(yintercept = 0) + 
+    scale_x_continuous(breaks = seq(0.0, 1.0, by = 0.2)) + 
+    geom_text(
+      data = resp_label,
+      size = 2.5,
+      hjust = -0.1, 
+      vjust = 1.1,
+      mapping = aes(x = -Inf, y = Inf, label = label)) + 
+    theme(
+      legend.position = "bottom", 
+      # axis.text = element_blank(), 
+      strip.text.x = element_blank(), 
+      panel.grid = element_blank()) + 
+    labs(
+      title = "Responsive sites only",
+      color = "Stage", 
+      linetype = "Stim.",
+      x = "Proportion of PCs", 
+      y = "R-squared on test")
+
+p_resp + p_all + plot_layout(ncol = 1)
+```
+
+
 ## Next steps
 
-- Running the above with a lower responsive channel threshold or with all channels regardless of responsiveness
-- Contrasting the early/late response (averaged over the first 70 ms vs. the next 70 ms after onset) instead of over 150 ms after stimulus onset. 
+When noisy and naturalistic stimuli were grouped together, the eigenspectrum did not obviously differ from the eigenspectra derived from the noisy-only and naturalistic-only stimuli. This may indicate that the most influential eigenvalues/eigenvectors for all non-blank stimuli did not correspond to the noisy/naturalistic distinction. So, a reasonable next step would be to investigate predictiveness of the noisy-naturalistic distinction as a function of the number of included eigenvalues. Relatedly, checking predictiveness for other features, like the family, block order, etc. might be interesting. 
+
+Furthermore, I might want to backtrack on the responsive sites to do some additional exploratory analyses. I am somewhat interested in whether responsive sites are all up- or downregulated. 
+
+One consistent pattern throughout analyses is that V4 tends to look more "peaky"/have more influential early eigenvalues. From Lee et al.'s original publication, we know V4 is the most predictive of the noisy-naturalistic distinction. There might be something there, i.e., questions like: 
+
+- Do the initial principal components of V4 contain more information about the noisy-naturalistic distinction?
+- Are the PCs of V4 linearly related to the PCs of V2? or IT?
+- Does V2 lack predictiveness of the noisy-naturalistic distinction or is it nonlinearly decodable?
+
+Deep neural network predicting: 
+
+- Predicting responses of each region based on stimulus characteristics
+- V1-like features predicting IT responses
+- Generated from an encoding model
+- DiCarlo brain score work
+
+- Family-level discriminability in each region
+  - Decoding or RSA
+- Texture encoding
+- Corey Ziemba (2023) behavioral recognition
+- Lit review on texture family decoding
+- Freeman
