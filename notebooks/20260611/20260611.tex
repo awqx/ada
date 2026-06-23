@@ -56,6 +56,46 @@
 \fi
 \makeatother
 
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{241,243,245}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.40,0.45,0.13}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\BuiltInTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\ExtensionTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.28,0.35,0.67}{#1}}
+\newcommand{\ImportTok}[1]{\textcolor[rgb]{0.00,0.46,0.62}{#1}}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.68,0.00,0.00}{#1}}
+\newcommand{\RegionMarkerTok}[1]{\textcolor[rgb]{0.00,0.23,0.31}{#1}}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.07,0.07,0.07}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.13,0.47,0.30}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.37,0.37,0.37}{\textit{#1}}}
 
 \usepackage{longtable,booktabs,array}
 \usepackage{calc} % for calculating minipage widths
@@ -241,110 +281,156 @@ of each unique image stimulus. Repetitions of the same stimulus were
 averaged. PCA was performed on the training set with \texttt{prcomp()}.
 The test set was then projected onto the PCs. The test signal was then
 reconstructed with \(1, 2, \dots, n\) PCs, where \(n\) was the number of
-responsive sites for a region/age. The proportion of variance explained
-for the training set was calculated by cumulative sums of the PCA
-eigenvalues, scaled by the overall sum. The proportion of variance
-explained for the test set was reported with a standard \(R^2\)
-calculation. In some cases, the proportion of the variance of the test
-set was rescaled by the maximum \(R^2\) to allow better visual
-comparison with the training set.
+responsive sites for a region/age.
+
+I found the proportion of variance explained for the training set with
+cumulative sums of the PCA eigenvalues, scaled by the overall sum. For
+the test set, I reported the proportion of variance explained with a
+standard \(R^2\) calculation.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# ...}
+\NormalTok{x\_pca\_trn }\OtherTok{\textless{}{-}} \FunctionTok{prcomp}\NormalTok{(x\_splits[[}\DecValTok{1}\NormalTok{]], }\AttributeTok{center =}\NormalTok{ F)}
+\NormalTok{trn\_pcs }\OtherTok{\textless{}{-}}\NormalTok{ x\_pca\_trn}\SpecialCharTok{$}\NormalTok{rotation}
+
+\NormalTok{tst\_scores }\OtherTok{\textless{}{-}} \FunctionTok{predict}\NormalTok{(x\_pca\_trn, x\_splits[[}\DecValTok{2}\NormalTok{]])}
+\NormalTok{tst\_loadings }\OtherTok{\textless{}{-}}\NormalTok{ tst\_scores }\SpecialCharTok{\%*\%} \FunctionTok{t}\NormalTok{(trn\_pcs)}
+
+\NormalTok{trn\_var }\OtherTok{\textless{}{-}}\NormalTok{ x\_pca\_trn}\SpecialCharTok{$}\NormalTok{sdev }\SpecialCharTok{\^{}} \DecValTok{2}
+\NormalTok{tst\_rsq }\OtherTok{\textless{}{-}} \FunctionTok{sapply}\NormalTok{(}
+  \DecValTok{1}\SpecialCharTok{:}\FunctionTok{ncol}\NormalTok{(trn\_pcs),}
+  \ControlFlowTok{function}\NormalTok{(i) \{}
+\NormalTok{    tst\_loadings }\OtherTok{\textless{}{-}}\NormalTok{ tst\_scores[, }\DecValTok{1}\SpecialCharTok{:}\NormalTok{i] }\SpecialCharTok{\%*\%} \FunctionTok{t}\NormalTok{(trn\_pcs[, }\DecValTok{1}\SpecialCharTok{:}\NormalTok{i])}
+    \FunctionTok{data.frame}\NormalTok{(}
+      \AttributeTok{tst\_true =} \FunctionTok{matrix}\NormalTok{(x\_splits[[}\DecValTok{2}\NormalTok{]], }\AttributeTok{ncol =} \DecValTok{1}\NormalTok{),}
+      \AttributeTok{tst\_pred =} \FunctionTok{matrix}\NormalTok{(tst\_loadings, }\AttributeTok{ncol =} \DecValTok{1}\NormalTok{)) }\SpecialCharTok{\%\textgreater{}\%}
+        \FunctionTok{lm}\NormalTok{(tst\_true }\SpecialCharTok{\textasciitilde{}}\NormalTok{ tst\_pred, .) }\SpecialCharTok{\%\textgreater{}\%}
+        \FunctionTok{summary}\NormalTok{() }\SpecialCharTok{\%\textgreater{}\%}
+\NormalTok{        .}\SpecialCharTok{$}\NormalTok{r.squared \})}
+\NormalTok{trn\_var\_prop }\OtherTok{\textless{}{-}} \FunctionTok{cumsum}\NormalTok{(trn\_var) }\SpecialCharTok{/} \FunctionTok{sum}\NormalTok{(trn\_var)}
+\CommentTok{\# ...}
+\end{Highlighting}
+\end{Shaded}
 
 \section{Results}\label{results}
 
-\subsection{Non-blank stimuli}\label{non-blank-stimuli}
+\subsection{Different stimuli subsets and included
+channels}\label{different-stimuli-subsets-and-included-channels}
 
 The split half PCA procedure follows the same logic as split half
-correlation. However, unlike correlation, blank stimuli were removed. In
-Figure~\ref{fig-pca_nonblank}, the variance explained for the test set
-was rescaled to a maximum of 1 to allow for comparison with the variance
-explained in training. Furthermore, the number of included PCs has been
-scaled to the proportion of total PCs. IT appears to have a flatter
-eigenspectrum, though this might be an artifact of the low number of
-responsive sites/PCs. For all regions and sessions, the test set line is
-above the training set line, indicative of a lower effective
-dimensionality for some definitions.
+correlation. However, unlike correlation, blank stimuli were removed.
+For this analysis, I ran the split half PCA procedure with 1) all
+non-blank stimuli, 2) noisy stimuli, and 3) naturalistic stimuli.
 
-\subsection{Separate noisy and naturalistic
-stimuli}\label{separate-noisy-and-naturalistic-stimuli}
+I also compared performance on only responsive sites vs.~all available
+sites. For figures with only responsive sites, the number of included
+PCs has been scaled to the proportion of total PCs. For figures with all
+available sites, I did not alter the scale of the number of PCs, but I
+did truncate graphs to the first 96 PCs, corresponding to the number of
+channels on a single array.
 
-When the stimuli are separated into the noisy and naturalistic stimuli
-prior to calculating split half PCA, the training and test set
-cumulative variances are much closer between the training and test set
-for V2 and V4, indicating better reliability. The number of PCs to
-explain 90\% of the variance (or proportion of the maximum amount of
-variance explained for the test set) for non-blank stimuli, noisy
-stimuli, and naturalistic stimuli can be found in Table~\ref{tbl-pca}.
+The number of PCs to explain 90\% of maximum test set R-squared for
+non-blank stimuli, noisy stimuli, and naturalistic stimuli can be found
+in Table~\ref{tbl-pca} (in analyses with only responsive sites).The
+maximum test set R-squared can be found in Table~\ref{tbl-pca_rsq}.
+
+\subsection{R-squared mostly consistent with Lee et al.'s
+results}\label{r-squared-mostly-consistent-with-lee-et-al.s-results}
+
+The R-squared trends in Table~\ref{tbl-pca} seem consistent with
+\href{https://doi.org/10.1016/j.celrep.2024.114534}{Lee et al.} finding
+that V4 and V2 have the best discriminability between noisy and
+naturalistic stimuli in LDA. That is, the higher reconstructed
+R-squareds reflect more usable information in those recordings.
+
+\subsection{IT flatter, V4 peakier}\label{it-flatter-v4-peakier}
+
+IT appears to have a flatter eigenspectrum in @fig\_pca, though this
+might be an artifact of the low number of responsive sites/PCs. The
+analysis with all available plots might be helpful for region-age
+combinations with a small number of responsive sites. These plots show a
+clear plateau where the training PCs only capture noise in the test set.
+Instead of the 90\% variance explained threshold, a better metric may be
+the location of the elbow where the plateau begins (not yet calculated).
+
+The eigenspectrum of V4 seems consistently ``peakier'', with more weight
+on earlier eigenvalues. There appears to be a trend where V1 is
+flattest, V4 is peakiest, and V2 is in-between. Next steps can explore
+this more.
+
+\subsection{Worse reconstruction of noisy
+stimuli}\label{worse-reconstruction-of-noisy-stimuli}
+
+In Figure~\ref{fig-pca}, on the test set, naturalistic-only stimuli to
+have better reconstruction than non-blank, which in turn is better than
+noisy-only stimuli. (I double-checked that the centering of columns
+occurred \emph{after} subsetting the stimuli type). This trend probably
+implies that the noisy texture stimuli produced more noise in the signal
+response.
+
 Generally, fewer PCs are needed to explain 90\% of the variance of the
-test set when the stimuli are separated into the noisy/naturalistic
-categories.
+test set when the stimuli only include the noisy or naturalistic
+stimuli. Noisy-only stimuli tend to require fewer PCs than naturalistic
+stimuli.
 
 \begin{figure}
 
 \centering{
 
-\pandocbounded{\includegraphics[keepaspectratio]{20260611_files/figure-pdf/fig-pca_nonblank-1.pdf}}
+\pandocbounded{\includegraphics[keepaspectratio]{20260611_files/figure-pdf/fig-pca-1.pdf}}
 
 }
 
-\caption{\label{fig-pca_nonblank}Comparisons between the variance
-explained by the principal components for the training and test set,
-organized by region (rows) and by session (columns). The proportion of
-variance explained for the test set has been rescaled.}
-
-\end{figure}%
-
-\begin{figure}
-
-\centering{
-
-\pandocbounded{\includegraphics[keepaspectratio]{20260611_files/figure-pdf/fig-pca_coherence-1.pdf}}
-
-}
-
-\caption{\label{fig-pca_coherence}Same as previous figure, but noisy
-stimuli are in the top section and naturalistic stimuli are in the
-bottom.}
+\caption{\label{fig-pca}Comparisons between the variance explained by
+the principal components for the training and test set, organized by
+region (rows) and by session (columns). For responsive sites (top), the
+x-axis is rescaled for each subplot, and the true number of PCs is in
+parentheses. For all sites (bottom), the x-axis scale is consistent, but
+truncated to 96 sites.}
 
 \end{figure}%
 
 \begin{table}
 
 \caption{\label{tbl-pca}Number of PCs to explain 90\% of the variance
-(scaled to proportion for test set). Non-blank (NB), noisy (Ns),
-naturalistic (Nt).}
+(scaled to proportion for test set) in responsive sites. Non-blank (NB),
+noisy (Ns), naturalistic (Nt).}
 
 \centering{
 
 \fontsize{9.0pt}{11.0pt}\selectfont
 \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}rrrrrrrr}
 \toprule
-Age (weeks) & Total PCs & Train (NB) & Train (Ns) & Train (Nt) & Test (NB) & Test (Ns) & Test (Nt) \\ 
+ &  & \multicolumn{3}{c}{{Train}} & \multicolumn{3}{c}{{Test}} \\ 
+\cmidrule(lr){3-5} \cmidrule(lr){6-8}
+Age (weeks) & Total PCs & NB & Nt & Ns & NB & Nt & Ns \\ 
 \midrule\addlinespace[2.5pt]
 \multicolumn{8}{l}{IT} \\[2.5pt] 
 \midrule\addlinespace[2.5pt]
-20 & 13 & 4 & 4 & 4 & 6 & 6 & 5 \\ 
-31 & 8 & 2 & 2 & 2 & 4 & 2 & 4 \\ 
+20 & 13 & 4 & 4 & 4 & 6 & 5 & 6 \\ 
+31 & 8 & 2 & 2 & 2 & 4 & 4 & 2 \\ 
 34 & 6 & 2 & 2 & 2 & 3 & 3 & 3 \\ 
 221 & 11 & 3 & 3 & 3 & 5 & 5 & 5 \\ 
 \midrule\addlinespace[2.5pt]
 \multicolumn{8}{l}{V1} \\[2.5pt] 
 \midrule\addlinespace[2.5pt]
-29 & 21 & 7 & 6 & 8 & 15 & 9 & 13 \\ 
-37 & 23 & 7 & 6 & 7 & 12 & 7 & 10 \\ 
-56 & 34 & 10 & 10 & 11 & 23 & 11 & 19 \\ 
+29 & 21 & 7 & 8 & 6 & 15 & 13 & 9 \\ 
+37 & 23 & 7 & 7 & 6 & 12 & 10 & 7 \\ 
+56 & 34 & 10 & 11 & 10 & 23 & 19 & 11 \\ 
 \midrule\addlinespace[2.5pt]
 \multicolumn{8}{l}{V2} \\[2.5pt] 
 \midrule\addlinespace[2.5pt]
-29 & 77 & 32 & 31 & 34 & 40 & 20 & 27 \\ 
-37 & 70 & 31 & 31 & 33 & 42 & 19 & 26 \\ 
-56 & 61 & 28 & 27 & 30 & 33 & 17 & 28 \\ 
+29 & 77 & 32 & 34 & 31 & 40 & 27 & 20 \\ 
+37 & 70 & 31 & 33 & 31 & 42 & 26 & 19 \\ 
+56 & 61 & 28 & 30 & 27 & 33 & 28 & 17 \\ 
 \midrule\addlinespace[2.5pt]
 \multicolumn{8}{l}{V4} \\[2.5pt] 
 \midrule\addlinespace[2.5pt]
-29 & 42 & 15 & 13 & 16 & 27 & 14 & 23 \\ 
-37 & 58 & 19 & 18 & 20 & 31 & 16 & 25 \\ 
-56 & 68 & 27 & 25 & 28 & 42 & 19 & 34 \\ 
-409 & 77 & 34 & 34 & 36 & 48 & 23 & 34 \\ 
+29 & 42 & 15 & 16 & 13 & 27 & 23 & 14 \\ 
+37 & 58 & 19 & 20 & 18 & 31 & 25 & 16 \\ 
+56 & 68 & 27 & 28 & 25 & 42 & 34 & 19 \\ 
+409 & 77 & 34 & 36 & 34 & 48 & 34 & 23 \\ 
 \bottomrule
 \end{tabular*}
 
@@ -352,17 +438,123 @@ Age (weeks) & Total PCs & Train (NB) & Train (Ns) & Train (Nt) & Test (NB) & Tes
 
 \end{table}%
 
+\begin{table}
+
+\caption{\label{tbl-pca_rsq}Maximum R-squared for split half PCA on all
+sites and responsive sites only. Non-blank (NB), noisy (Ns),
+naturalistic (Nt).}
+
+\centering{
+
+\fontsize{9.0pt}{11.0pt}\selectfont
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}rrrrrrr}
+\toprule
+ & \multicolumn{3}{c}{{All sites}} & \multicolumn{3}{c}{{Responsive sites}} \\ 
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+Age (weeks) & NB & Nt & Ns & NB & Nt & Ns \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{7}{l}{IT} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+20 & {\cellcolor[HTML]{B1D8B9}{\textcolor[HTML]{000000}{0.278}}} & {\cellcolor[HTML]{91C89E}{\textcolor[HTML]{000000}{0.355}}} & {\cellcolor[HTML]{B1D8BA}{\textcolor[HTML]{000000}{0.278}}} & {\cellcolor[HTML]{7FC08F}{\textcolor[HTML]{000000}{0.398}}} & {\cellcolor[HTML]{80C090}{\textcolor[HTML]{000000}{0.396}}} & {\cellcolor[HTML]{B3D9BB}{\textcolor[HTML]{000000}{0.273}}} \\ 
+31 & {\cellcolor[HTML]{A1D0AB}{\textcolor[HTML]{000000}{0.318}}} & {\cellcolor[HTML]{259A54}{\textcolor[HTML]{FFFFFF}{0.574}}} & {\cellcolor[HTML]{259A54}{\textcolor[HTML]{FFFFFF}{0.574}}} & {\cellcolor[HTML]{9ECEA9}{\textcolor[HTML]{000000}{0.326}}} & {\cellcolor[HTML]{8BC599}{\textcolor[HTML]{000000}{0.371}}} & {\cellcolor[HTML]{F1F8F2}{\textcolor[HTML]{000000}{0.123}}} \\ 
+34 & {\cellcolor[HTML]{BCDEC3}{\textcolor[HTML]{000000}{0.252}}} & {\cellcolor[HTML]{73BA86}{\textcolor[HTML]{000000}{0.426}}} & {\cellcolor[HTML]{80C090}{\textcolor[HTML]{000000}{0.396}}} & {\cellcolor[HTML]{93C99F}{\textcolor[HTML]{000000}{0.352}}} & {\cellcolor[HTML]{89C498}{\textcolor[HTML]{000000}{0.374}}} & {\cellcolor[HTML]{FBFDFB}{\textcolor[HTML]{000000}{0.099}}} \\ 
+221 & {\cellcolor[HTML]{D5EAD9}{\textcolor[HTML]{000000}{0.191}}} & {\cellcolor[HTML]{B2D9BA}{\textcolor[HTML]{000000}{0.276}}} & {\cellcolor[HTML]{C0E0C7}{\textcolor[HTML]{000000}{0.242}}} & {\cellcolor[HTML]{A7D3B1}{\textcolor[HTML]{000000}{0.302}}} & {\cellcolor[HTML]{9DCEA8}{\textcolor[HTML]{000000}{0.327}}} & {\cellcolor[HTML]{D3E9D7}{\textcolor[HTML]{000000}{0.197}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{7}{l}{V1} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{D8EBDB}{\textcolor[HTML]{000000}{0.185}}} & {\cellcolor[HTML]{BBDDC2}{\textcolor[HTML]{000000}{0.253}}} & {\cellcolor[HTML]{CDE6D2}{\textcolor[HTML]{000000}{0.212}}} & {\cellcolor[HTML]{D4EAD8}{\textcolor[HTML]{000000}{0.193}}} & {\cellcolor[HTML]{C6E3CC}{\textcolor[HTML]{000000}{0.228}}} & {\cellcolor[HTML]{D8EBDB}{\textcolor[HTML]{000000}{0.185}}} \\ 
+37 & {\cellcolor[HTML]{CDE6D2}{\textcolor[HTML]{000000}{0.210}}} & {\cellcolor[HTML]{8EC79B}{\textcolor[HTML]{000000}{0.364}}} & {\cellcolor[HTML]{9CCEA7}{\textcolor[HTML]{000000}{0.330}}} & {\cellcolor[HTML]{E4F2E7}{\textcolor[HTML]{000000}{0.155}}} & {\cellcolor[HTML]{CFE7D4}{\textcolor[HTML]{000000}{0.205}}} & {\cellcolor[HTML]{EBF5ED}{\textcolor[HTML]{000000}{0.137}}} \\ 
+56 & {\cellcolor[HTML]{D0E7D4}{\textcolor[HTML]{000000}{0.204}}} & {\cellcolor[HTML]{B2D8BA}{\textcolor[HTML]{000000}{0.277}}} & {\cellcolor[HTML]{C6E3CC}{\textcolor[HTML]{000000}{0.227}}} & {\cellcolor[HTML]{CFE7D3}{\textcolor[HTML]{000000}{0.207}}} & {\cellcolor[HTML]{B6DBBE}{\textcolor[HTML]{000000}{0.267}}} & {\cellcolor[HTML]{D2E9D7}{\textcolor[HTML]{000000}{0.197}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{7}{l}{V2} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{92C99F}{\textcolor[HTML]{000000}{0.353}}} & {\cellcolor[HTML]{67B47D}{\textcolor[HTML]{000000}{0.452}}} & {\cellcolor[HTML]{8AC598}{\textcolor[HTML]{000000}{0.373}}} & {\cellcolor[HTML]{95CAA1}{\textcolor[HTML]{000000}{0.347}}} & {\cellcolor[HTML]{79BC8A}{\textcolor[HTML]{000000}{0.412}}} & {\cellcolor[HTML]{A5D2AF}{\textcolor[HTML]{000000}{0.309}}} \\ 
+37 & {\cellcolor[HTML]{9BCDA7}{\textcolor[HTML]{000000}{0.332}}} & {\cellcolor[HTML]{6DB781}{\textcolor[HTML]{000000}{0.441}}} & {\cellcolor[HTML]{8FC79C}{\textcolor[HTML]{000000}{0.360}}} & {\cellcolor[HTML]{9ACDA6}{\textcolor[HTML]{000000}{0.334}}} & {\cellcolor[HTML]{82C192}{\textcolor[HTML]{000000}{0.392}}} & {\cellcolor[HTML]{AAD5B3}{\textcolor[HTML]{000000}{0.296}}} \\ 
+56 & {\cellcolor[HTML]{9CCEA8}{\textcolor[HTML]{000000}{0.329}}} & {\cellcolor[HTML]{66B47C}{\textcolor[HTML]{000000}{0.455}}} & {\cellcolor[HTML]{92C99F}{\textcolor[HTML]{000000}{0.354}}} & {\cellcolor[HTML]{9DCEA8}{\textcolor[HTML]{000000}{0.327}}} & {\cellcolor[HTML]{7DBF8E}{\textcolor[HTML]{000000}{0.403}}} & {\cellcolor[HTML]{B0D8B9}{\textcolor[HTML]{000000}{0.280}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{7}{l}{V4} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{81C091}{\textcolor[HTML]{000000}{0.394}}} & {\cellcolor[HTML]{3CA25F}{\textcolor[HTML]{FFFFFF}{0.540}}} & {\cellcolor[HTML]{6DB781}{\textcolor[HTML]{000000}{0.440}}} & {\cellcolor[HTML]{6EB782}{\textcolor[HTML]{000000}{0.437}}} & {\cellcolor[HTML]{5AAE73}{\textcolor[HTML]{FFFFFF}{0.482}}} & {\cellcolor[HTML]{AFD7B7}{\textcolor[HTML]{000000}{0.284}}} \\ 
+37 & {\cellcolor[HTML]{7DBE8D}{\textcolor[HTML]{000000}{0.404}}} & {\cellcolor[HTML]{38A05D}{\textcolor[HTML]{FFFFFF}{0.546}}} & {\cellcolor[HTML]{6BB67F}{\textcolor[HTML]{000000}{0.445}}} & {\cellcolor[HTML]{79BC8A}{\textcolor[HTML]{000000}{0.413}}} & {\cellcolor[HTML]{63B279}{\textcolor[HTML]{FFFFFF}{0.463}}} & {\cellcolor[HTML]{B4D9BC}{\textcolor[HTML]{000000}{0.273}}} \\ 
+56 & {\cellcolor[HTML]{70B883}{\textcolor[HTML]{000000}{0.434}}} & {\cellcolor[HTML]{239A53}{\textcolor[HTML]{FFFFFF}{0.576}}} & {\cellcolor[HTML]{64B37A}{\textcolor[HTML]{FFFFFF}{0.459}}} & {\cellcolor[HTML]{69B57E}{\textcolor[HTML]{000000}{0.449}}} & {\cellcolor[HTML]{48A667}{\textcolor[HTML]{FFFFFF}{0.518}}} & {\cellcolor[HTML]{9FCFAA}{\textcolor[HTML]{000000}{0.322}}} \\ 
+409 & {\cellcolor[HTML]{8EC79C}{\textcolor[HTML]{000000}{0.363}}} & {\cellcolor[HTML]{68B47D}{\textcolor[HTML]{000000}{0.451}}} & {\cellcolor[HTML]{9ACDA6}{\textcolor[HTML]{000000}{0.334}}} & {\cellcolor[HTML]{8CC69A}{\textcolor[HTML]{000000}{0.368}}} & {\cellcolor[HTML]{6AB57F}{\textcolor[HTML]{000000}{0.447}}} & {\cellcolor[HTML]{A0D0AB}{\textcolor[HTML]{000000}{0.319}}} \\ 
+\bottomrule
+\end{tabular*}
+
+}
+
+\end{table}%
+
+\subsection{Averages in early and late windows after
+onset}\label{averages-in-early-and-late-windows-after-onset}
+
+Out of curiosity, I also created Figure~\ref{fig-pca_stages}, which
+contains the plots of explained variance when the signal average is
+taken for 50 ms after onset (``early'') or 100-150 ms after onset
+(``late''). Since averages are taken after onset time calculation, the
+``early'' and ``late'' windows were different for each region
+(corresponding to rows in Figure~\ref{fig-pca_stages}). I did not spot
+any consistent or notable differences in the curves for the training
+set, so they are omitted for clarity.
+
+The order of reconstruction performance, from worst to best, tends to go
+from early to late to full window. Eigenspectra tend to be consistent
+with stimulus set, regardless of the window where averages are taken.
+
+I don't have a confident explanation as to why the slopes of the
+eigenspectra after the elbow are different for the stimulus types or
+even a guess as to whether it's that important. It might reflect the
+split-half correlation/self-consistency of neurons, though I would need
+to check this against the learned PCs.
+
+\begin{figure}
+
+\centering{
+
+\pandocbounded{\includegraphics[keepaspectratio]{20260611_files/figure-pdf/fig-pca_stages-1.pdf}}
+
+}
+
+\caption{\label{fig-pca_stages}Comparison of proportion of variance
+explained for data with only responsive sites (top) and all recorded
+sites (bottom). Colors indicate whether averages were taken 0-50 ms
+after onset or 100-150 ms after onset. Training set PCA results omitted.
+Number of sites for each subplot is in parentheses.}
+
+\end{figure}%
+
 \section{Next steps}\label{next-steps}
+
+When noisy and naturalistic stimuli were grouped together, the
+eigenspectrum did not obviously differ from the eigenspectra derived
+from the noisy-only and naturalistic-only stimuli. This may indicate
+that the most influential eigenvalues/eigenvectors for all non-blank
+stimuli did not correspond to the noisy/naturalistic distinction. So, a
+reasonable next step would be to investigate predictiveness of the
+noisy-naturalistic distinction as a function of the number of included
+eigenvalues. Relatedly, checking predictiveness for other features, like
+the family, block order, etc. might be interesting.
+
+Furthermore, I might want to backtrack on the responsive sites to do
+some additional exploratory analyses. I am somewhat interested in
+whether responsive sites are all up- or downregulated.
+
+One consistent pattern throughout analyses is that V4 tends to look more
+``peaky''/have more influential early eigenvalues. From Lee et al.'s
+original publication, we know V4 is the most predictive of the
+noisy-naturalistic distinction. There might be something there, i.e.,
+questions like:
 
 \begin{itemize}
 \tightlist
 \item
-  Running the above with a lower responsive channel threshold or with
-  all channels regardless of responsiveness
+  Do the initial principal components of V4 contain more information
+  about the noisy-naturalistic distinction?
 \item
-  Contrasting the early/late response (averaged over the first 70 ms
-  vs.~the next 70 ms after onset) instead of over 150 ms after stimulus
-  onset.
+  Are the PCs of V4 linearly related to the PCs of V2? or IT?
+\item
+  Does V2 lack predictiveness of the noisy-naturalistic distinction or
+  is it nonlinearly decodable?
 \end{itemize}
 
 
