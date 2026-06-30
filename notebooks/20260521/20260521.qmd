@@ -40,7 +40,7 @@ source(here("R", "str_info.R"))
 t2_dir <- here("data", "raw", "lee2024", "data", "textures2_data")
 t2_dir <- paste0(t2_dir, "/")
 
-out_dir <- paste0(here("data", "processed"), "/", nb_id, "/")
+out_dir <- here("data", "processed", nb_id)
 # res_dir <- paste0(here("results"), "/", nb_id, "/")
 if (!dir.exists(out_dir)) dir.create(out_dir)
 # if (!dir.exists(res_dir)) dir.create(res_dir)
@@ -79,11 +79,11 @@ stimuli <- select(stims_ref, -coherence_t3, -x5) %>%
 ```
 
 ```{r, echo = F, eval = F}
-write.csv(stimuli, paste0(out_dir, "stimuli.csv"), row.names = F)
+write.csv(stimuli, file.path(out_dir, "stimuli.csv"), row.names = F)
 ```
 
 ```{r, echo = F}
-stimuli <- read.csv(paste0(out_dir, "stimuli.csv"))
+stimuli <- read.csv(file.path(out_dir, "stimuli.csv"))
 ```
 
 ```{r check stimuli, eval = F, echo = F}
@@ -113,7 +113,7 @@ for (f in files) {
 
 write.csv(
   data.frame(block_list),
-  paste0(out_dir, "block_order.csv"), row.names = F)
+  file.path(out_dir, "block_order.csv"), row.names = F)
 ```
 
 ## Binned multiunit activity

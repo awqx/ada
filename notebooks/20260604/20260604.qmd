@@ -335,8 +335,8 @@ onset_df <- lapply(
       mutate(
         onset = onset, 
         n_na = sum(is.na(onset_grp)),
-        min_onset = min(onset_grp, na.rm = T), 
-        max_onset = max(onset_grp, na.rm = T), 
+        min_onset = min(onset_grp, na.rm = T) - 2, 
+        max_onset = max(onset_grp, na.rm = T) - 2, 
         resp_total = resp_total) %>%
       mutate(prop_onset = (resp_total - n_na) / max(resp_total, 1))}) %>%
   do.call(rbind, .) 
