@@ -5,6 +5,7 @@
 \PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
 %
 \documentclass[
+  11pt,
   letterpaper,
   DIV=11,
   numbers=noendperiod]{scrartcl}
@@ -199,29 +200,142 @@
 \title{(ADA) Introduction to the Lee et al.~visual cortex recording
 data}
 \author{Al Xin}
-\date{May 21, 2026}
+\date{Jun 23, 2026}
 \begin{document}
 \maketitle
 
 
 \section{Overview}\label{overview}
 
-Lee et al.~published and analyzed this dataset in the 2024 \emph{Cell}
-article ``Developmentally stable representations of naturalistic image
-structure in macaque visual cortex''
-{[}\citeproc{ref-lee_developmentally_2024}{1}{]}. Data and code are
-available on \href{https://zenodo.org/records/10888270}{Zenodo}.
+When modeling brain activations with artificial neural networks (ANNs),
+previous work found more shared information between early ANN layers and
+early visual areas and, accordingly, late ANN layers and late visual
+areas
+{[}\citeproc{ref-schrimpf_integrative_2020}{1}--\citeproc{ref-nonaka_brain_2021}{3}{]}.
+These analyses often report the quality of fit of linear models
+predicting brain activity from ANN activations
+{[}\citeproc{ref-schrimpf_brain-score_2020}{4}{]}. However, as discussed
+in Feather and Canatar (2023), early and late region/layer data are
+often not sourced from the same experiment. Thus, these results might be
+confounded with task differences
+{[}\citeproc{ref-canatar_spectral_2023}{5}{]}.
 
-\section{Recording details}\label{recording-details}
+In my ADA, I am analyzing dataset provided by Lee et al.~(2024)
+containing longitudinal and inter-region neural responses to visual
+texture stimuli, available on
+\href{https://zenodo.org/records/10888270}{Zenodo}
+{[}\citeproc{ref-lee_developmentally_2024}{6}{]}. Lee et al.~recorded
+from 6 macaques with two arrays each, targeting V1, V2, V4, and IT (with
+the recorded region differing by monkey). All recordings were taken from
+the same set of texture stimuli.
 
-Lee et al.~included 8 monkeys and provided experimental details in their
-first table, which is recopied in the Appendix
-Section~\ref{sec-recording_table}. Behavioral age ranges are copied in
-Table~\ref{tbl-behavior}, but I will skip discussion of the behavioral
-task for now, with a brief overview in Section~\ref{sec-behavior}. The
-number of visually responsive sites for each area and session can be
-seen in Table~\ref{tbl-sites} (see Section~\ref{sec-active_sites} for
-more on how responsive sites were defined).
+First, I want to characterize the differences in neural responses for
+each region and establish differences in encoding of the stimuli. Lee et
+al.~have already performed linear discriminant analysis between
+noisy/naturalistic textures, and concluded that neural discriminability
+was highest in V4, lower in V2 and IT, and lowest in V1. For the ADA, I
+want to characterize encoding differences between texture families.
+Possible approaches include:
+
+\begin{itemize}
+\tightlist
+\item
+  Multiclass logistic regression (plus some other more detailed
+  interpretation than the inference performance)
+\item
+  Some non-parametric clustering strategy
+\item
+  Some distance metric then geometric analysis of the distance matrix
+\end{itemize}
+
+Then, to pursue the question of whether early/late model alignment,
+possible approaches include:
+
+\begin{itemize}
+\tightlist
+\item
+  Fiting linear models to predict the activity in one region from the
+  activity of another region
+\item
+  Using V1-like statistics from the provided textures or produce
+  predictors from an established model of V1 firing
+\item
+  Training an ANN on the noisy/naturalistic or family classification
+  task then comparing the early/late layer alignment
+\end{itemize}
+
+\section{Data description}\label{data-description}
+
+Prior to publishing the data used here, this research group claimed that
+V2 played a functional role in discriminating noisy vs.~naturalistic
+textures {[}\citeproc{ref-freeman_functional_2013}{7}{]}. This follow-up
+examined how neural and behavioral sensitivity changes over development.
+
+Lee et al.~generated stimuli from the Portilla and Simoncelli (PS)
+parametric texture model
+{[}\citeproc{ref-portilla_parametric_2000}{8}{]}, producing 15 samples
+from 35 families at two levels of coherence (noisy vs.~naturalistic).
+They provided four repetitions of each unique image in each session.
+They implanted two 96-electrode Utah arrays in 6 monkeys.
+
+\subsection{Texture stimuli}\label{texture-stimuli}
+
+Example textures generated from the Portilla and Simoncelli (2001) are
+in Figure~\ref{fig-textures}. The PS parametric texture model is a
+multilevel generative model that produces sample images by matching
+visual statistics to an original seed image. The lowest level of the
+model matches the local statistic of the original image, e.g., the
+correlation in luminance between adjacent pixels, the average luminance
+in a small area, or the total variation in luminance. Subsequent layers
+control higher level correlations, e.g., correlations between
+neighboring patterns of pixels.
+
+Portilla and Simoncelli describe the higher levels as ``V1-like'' or
+analogous to the receptive fields of the primary visual cortex. Matching
+V1-like correlations produces more coherent \emph{naturalistic}
+structure. Example noisy and naturalistic images can be seen in
+Figure~\ref{fig-textures} (left). Though the degree of naturalistic
+structure varied in the behavioral task, the passive fixation recordings
+only contained noisy/zero strength textures or full strength
+naturalistic textures. Lee et al.~generated 15 samples of noisy and
+naturalistic images from 35 families (\(15 \times 35 \times 2\) unique
+images), where each family corresponded to a different original seed
+image.
+
+\begin{figure}
+
+\centering{
+
+\includegraphics[width=0.9\linewidth,height=\textheight,keepaspectratio]{lee2024-01.jpg}
+
+}
+
+\caption{\label{fig-textures}(A) Examples of samples generated with
+varying levels of naturalistic structure. (B) Families of samples
+generated from different seed images.}
+
+\end{figure}%
+
+\subsection{Passive recording setup}\label{passive-recording-setup}
+
+At least two recording sessions were conducted for each monkey: once at
+a juvenile stage (around 30 weeks) and once at an adult stage (around 56
+weeks). Within sessions, images were shown in blocks of 8, with 100 ms
+of the image on screen followed by 100 ms of blank display. Each of the
+1050 unique images (35 families, 15 samples, 2 levels of structure) were
+presented four times within a session. Lee et al.~also included 100
+uniquely labeled blank images, also repeated four times. This gives a
+total of \(4 \times (35 \times 15 \times 2 + 100) = 4600\) observations
+per session.
+
+\subsection{Recording details}\label{recording-details}
+
+Lee et al.~recorded from 6 out of 8 monkeys, with experimental details
+recopied in Appendix Table~\ref{tbl-lee_exp}. The behavioral task is
+probably not relevant for the ADA, but I included a brief overview in
+the Appendix Section~\ref{sec-behavior}. The number of visually
+responsive sites for each area and session can be seen in
+Table~\ref{tbl-sites} in Section~\ref{sec-processing}.
 
 The authors implanted a pair of 96 electrode Utah arrays per monkey
 (i.e., a total of 192 channels per subject). Regions were determined
@@ -230,150 +344,223 @@ latency), and receptive field characteristics. One array implanted on M1
 sat on the border between V1 and V2. For M3, the authors could not
 reliably determine the location and labeled the region as FC (the
 \emph{foveal confluence} of V1, V2 and V4), based on terminology from
-Brewer et al. {[}\citeproc{ref-brewer_visual_2002}{2}{]}.
+Brewer et al. {[}\citeproc{ref-brewer_visual_2002}{9}{]}. I removed FC
+data from analysis.
 
 Lee et al.~implanted arrays twice in M6, with the recording at 221 weeks
 taken from the second implantation. Two monkeys (M4 and M5) only
 underwent behavioral experiments. One monkey (M8) only underwent passive
 fixation recording. Three monkeys (M1, M2, and M3) performed the
 behavioral task prior to passive fixation experiments. Two monkeys (M6
-and M7) were tested cross-sectionally, where passive fixation recordings
-were taken prior to behavioral tests (approx. 30 weeks vs.~190 weeks).
-
-\begin{table}
-
-\caption{\label{tbl-behavior}Behavioral experiment age ranges. No
-behavioral experiments were performed with M8. M6 and M7 were tested
-cross-sectionally after passive fixation experiments.}
-
-\centering{
-
-\fontsize{10.0pt}{13.0pt}\selectfont
-\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}lll}
-\toprule
-Subject ID & Sex & Age range of behavioral tests (weeks) \\ 
-\midrule\addlinespace[2.5pt]
-M1 & Female & 17, 95 \\ 
-M2 & Female & 16, 95 \\ 
-M3 & Male & 16, 65 \\ 
-M4 & Female & 27, 53 \\ 
-M5 & Male & 17, 64 \\ 
-M6 & Male & 184, 194 \\ 
-M7 & Male & 184, 194 \\ 
-M8 & Male & NA, NA \\ 
-\bottomrule
-\end{tabular*}
-
-}
-
-\end{table}%
-
-\begin{table}
-
-\caption{\label{tbl-sites}Number of active recording sites by region and
-age. Dashes indicate no targeting of the region while zero indicates no
-active sites detected. No recordings were made in M4 and M5.}
-
-\centering{
-
-\fontsize{10.0pt}{12.0pt}\selectfont
-\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}rrrrrr}
-\toprule
-Age (weeks) & V1 & V2 & V4 & IT & FC \\ 
-\midrule\addlinespace[2.5pt]
-\multicolumn{6}{l}{M1} \\[2.5pt] 
-\midrule\addlinespace[2.5pt]
-29 & {\cellcolor[HTML]{20A486}{\textcolor[HTML]{FFFFFF}{56}}} & {\cellcolor[HTML]{2E6D8E}{\textcolor[HTML]{FFFFFF}{34}}} & {\cellcolor[HTML]{D5E21A}{\textcolor[HTML]{000000}{90}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-37 & {\cellcolor[HTML]{27AD81}{\textcolor[HTML]{FFFFFF}{60}}} & {\cellcolor[HTML]{2F6B8E}{\textcolor[HTML]{FFFFFF}{33}}} & {\cellcolor[HTML]{DCE318}{\textcolor[HTML]{000000}{91}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-56 & {\cellcolor[HTML]{2AB07F}{\textcolor[HTML]{FFFFFF}{61}}} & {\cellcolor[HTML]{31688E}{\textcolor[HTML]{FFFFFF}{32}}} & {\cellcolor[HTML]{F7E620}{\textcolor[HTML]{000000}{95}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-\midrule\addlinespace[2.5pt]
-\multicolumn{6}{l}{M2} \\[2.5pt] 
-\midrule\addlinespace[2.5pt]
-29 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{E3E418}{\textcolor[HTML]{000000}{92}}} & {\cellcolor[HTML]{3E4989}{\textcolor[HTML]{FFFFFF}{21}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-37 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{B2DD2D}{\textcolor[HTML]{000000}{85}}} & {\cellcolor[HTML]{23898E}{\textcolor[HTML]{FFFFFF}{45}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-56 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{E3E418}{\textcolor[HTML]{000000}{92}}} & {\cellcolor[HTML]{21A685}{\textcolor[HTML]{FFFFFF}{57}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-\midrule\addlinespace[2.5pt]
-\multicolumn{6}{l}{M3} \\[2.5pt] 
-\midrule\addlinespace[2.5pt]
-20 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{297A8E}{\textcolor[HTML]{FFFFFF}{39}}} & {\cellcolor[HTML]{C0DF25}{\textcolor[HTML]{000000}{87}}} \\ 
-31 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{287C8E}{\textcolor[HTML]{FFFFFF}{40}}} & {\cellcolor[HTML]{95D840}{\textcolor[HTML]{000000}{81}}} \\ 
-34 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{1FA187}{\textcolor[HTML]{FFFFFF}{55}}} \\ 
-\midrule\addlinespace[2.5pt]
-\multicolumn{6}{l}{M6} \\[2.5pt] 
-\midrule\addlinespace[2.5pt]
-30 & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{33638D}{\textcolor[HTML]{FFFFFF}{30}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-34 & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{20A486}{\textcolor[HTML]{FFFFFF}{56}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-36 & {\cellcolor[HTML]{46307E}{\textcolor[HTML]{FFFFFF}{13}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-221 & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{1F9A8A}{\textcolor[HTML]{FFFFFF}{52}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-\midrule\addlinespace[2.5pt]
-\multicolumn{6}{l}{M7} \\[2.5pt] 
-\midrule\addlinespace[2.5pt]
-28 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{32658E}{\textcolor[HTML]{FFFFFF}{31}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-34 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{21908D}{\textcolor[HTML]{FFFFFF}{48}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-\midrule\addlinespace[2.5pt]
-\multicolumn{6}{l}{M8} \\[2.5pt] 
-\midrule\addlinespace[2.5pt]
-409 & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FDE725}{\textcolor[HTML]{000000}{96}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{—}}} \\ 
-\bottomrule
-\end{tabular*}
-
-}
-
-\end{table}%
-
-\section{Features of the provided electrode
-data}\label{features-of-the-provided-electrode-data}
+and M7) provided passive fixation recordings prior to undergoing
+behavioral tests.
 
 The provided \href{https://zenodo.org/records/10888270}{Zenodo} data
-files do not contain raw recording data. \textbf{Multiunit threshold
-crossings} were binned into 10 ms windows (Section~\ref{sec-mua}).
+files do not contain the original spike timings. Multiunit threshold
+crossings, or multiunit activations (MUAs), were created from binning
+spikes into 10 ms windows. Single neuron spikes seem more common in
+dimensionality analyses
+{[}\citeproc{ref-pospisil_revisiting_2025}{10},\citeproc{ref-cowley_stimulus-driven_2016}{11}{]},
+but other work covers functional dimensionality estimation on fMRI data
+{[}\citeproc{ref-ahlheim_estimating_2018}{12}{]}, so this aggregation is
+probably fine for the purpose of the ADA.
 
-\section{Determining visually responsive sites}\label{sec-active_sites}
+\section{Processing multiunit activations}\label{sec-processing}
 
-To find visually responsive sites, Lee et al.~compared responses to
-stimuli or blank images. They averaged the site response separately for
-even and odd repetitions of each stimulus (so averaging across two
-observations twice) then kept sites with a Pearson correlation of
-\(\rho \geq 0.4\).
-
-They subsequently defined the onset time for a site as the first time
-bin with a \(|d'| \geq 0.4\) where the two subsequent windows also
-produced \(|d'| \geq 0.4\) of the same sign (see
-Equation~\ref{eq-dprime} for the definition of \(d'\)). They then
-defined the population onset time as the median onset time across
-visually responsive sites. For downstream analyses, Lee et al.~summed
-responses across the 150 ms window after population onset time.
+To find visually responsive (reliable) sites, Lee et al.~averaged the
+site response separately for even and odd repetitions of each unique
+image stimulus (i.e., two groups of two repetitions each) then kept
+sites with a Pearson correlation of \(\rho \geq 0.4\). Lee et
+al.~defined the onset time for a site as the first time bin with a
+\(|d'| \geq 0.4\) between non-blank and blank stimuli where the two
+subsequent windows also produced \(|d'| \geq 0.4\) of the same sign (see
+Equation~\ref{eq-dprime} for the definition of \(d'\)). They defined the
+population onset time as the median across visually responsive sites.
 
 \begin{equation}\phantomsection\label{eq-dprime}{
 d' = \frac{\mu_1 - \mu_0}{\sqrt{(\sigma^2_1 + \sigma^2_0)/2}}
 }\end{equation}
 
-\section{Questions, concerns, and next steps}\label{sec-discussion}
+The procedure for summarizing data can be outlined as:
 
-\subsection{Multiunit threshold crossings}\label{sec-mua}
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Find a temporary population onset time, with \(d'\) calculated between
+  blanks and stimuli. The search window is 0 to 200 ms after stimulus
+  presentation. If no onset time is found, use 100 ms as a placeholder.
+\item
+  Determine the responsive sites with signals averaged over a 150 ms
+  window starting at the temporary onset time.
+\item
+  Recalculate the population onset time based on the responsive sites.
+\item
+  For downstream analyses, sum responses across the 150 ms window after
+  population onset time.
+\end{enumerate}
 
-Single neuron spikes seem more common in dimensionality analyses
-({[}\citeproc{ref-pospisil_revisiting_2025}{3},\citeproc{ref-cowley_stimulus-driven_2016}{4}{]}),
-though I am not sure if there is existing work fully characterizing
-whether this provides meaningful advantages. Some work covers functional
-dimensionality estimation on fMRI data, so I infer that some level of
-signal aggregation does not immediately disqualify this analysis
-{[}\citeproc{ref-ahlheim_estimating_2018}{5}{]}.
+I found fewer reliable recording sites than Lee et al., seen in
+Table~\ref{tbl-sites} (see Section~\ref{sec-concerns} for discussion).
+Table~\ref{tbl-onsets} contain my calculated onset times and the
+proportion of reliable sites where onset time could be found. As a
+sanity check, onset times increase from V1 to IT. The proportion of
+reliable sites with derivable onset time decreases along region
+hierarchy.
+
+\begin{table}
+
+\caption{\label{tbl-sites}Number of reliable recording sites by region
+and age, with arbitrarily labeled arrays. Dashes indicate no targeting
+of the region while zero indicates no active sites detected. No
+recordings were made in M4 and M5. Outside of the V1/V2 recording in M1,
+the number of reliable sites are taken out 96 total sites.}
+
+\centering{
+
+\fontsize{9.0pt}{11.0pt}\selectfont
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}rrrrrrrrr}
+\toprule
+ & \multicolumn{4}{c}{{My calculations}} & \multicolumn{4}{c}{{Lee et al.}} \\ 
+\cmidrule(lr){2-5} \cmidrule(lr){6-9}
+Age (wks) & Array 1 & Array 2 & Array 3 & Total sites & Array 1 & Array 2 & Array 3 & Total sites \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{9}{l}{V1} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{46307E}{\textcolor[HTML]{FFFFFF}{21}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{46307E}{\textcolor[HTML]{FFFFFF}{21}}} & {\cellcolor[HTML]{2D718E}{\textcolor[HTML]{FFFFFF}{56}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{2D718E}{\textcolor[HTML]{FFFFFF}{56}}} \\ 
+37 & {\cellcolor[HTML]{453581}{\textcolor[HTML]{FFFFFF}{23}}} & {\cellcolor[HTML]{440154}{\textcolor[HTML]{FFFFFF}{0}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{453581}{\textcolor[HTML]{FFFFFF}{23}}} & {\cellcolor[HTML]{2A778E}{\textcolor[HTML]{FFFFFF}{60}}} & {\cellcolor[HTML]{482071}{\textcolor[HTML]{FFFFFF}{13}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{228B8D}{\textcolor[HTML]{FFFFFF}{73}}} \\ 
+56 & {\cellcolor[HTML]{3E4A89}{\textcolor[HTML]{FFFFFF}{34}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{3E4A89}{\textcolor[HTML]{FFFFFF}{34}}} & {\cellcolor[HTML]{2A788E}{\textcolor[HTML]{FFFFFF}{61}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{2A788E}{\textcolor[HTML]{FFFFFF}{61}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{9}{l}{V2} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{472D7B}{\textcolor[HTML]{FFFFFF}{19}}} & {\cellcolor[HTML]{2C738E}{\textcolor[HTML]{FFFFFF}{58}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{20928C}{\textcolor[HTML]{FFFFFF}{77}}} & {\cellcolor[HTML]{3E4A89}{\textcolor[HTML]{FFFFFF}{34}}} & {\cellcolor[HTML]{23A983}{\textcolor[HTML]{FFFFFF}{92}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{8CD646}{\textcolor[HTML]{000000}{126}}} \\ 
+37 & {\cellcolor[HTML]{46307E}{\textcolor[HTML]{FFFFFF}{21}}} & {\cellcolor[HTML]{32658E}{\textcolor[HTML]{FFFFFF}{49}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{24868E}{\textcolor[HTML]{FFFFFF}{70}}} & {\cellcolor[HTML]{3F4889}{\textcolor[HTML]{FFFFFF}{33}}} & {\cellcolor[HTML]{1F9F88}{\textcolor[HTML]{FFFFFF}{85}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{6CCD5A}{\textcolor[HTML]{000000}{118}}} \\ 
+56 & {\cellcolor[HTML]{482677}{\textcolor[HTML]{FFFFFF}{16}}} & {\cellcolor[HTML]{355E8D}{\textcolor[HTML]{FFFFFF}{45}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{2A788E}{\textcolor[HTML]{FFFFFF}{61}}} & {\cellcolor[HTML]{3F4788}{\textcolor[HTML]{FFFFFF}{32}}} & {\cellcolor[HTML]{23A983}{\textcolor[HTML]{FFFFFF}{92}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{84D44B}{\textcolor[HTML]{000000}{124}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{9}{l}{V4} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{3A538B}{\textcolor[HTML]{FFFFFF}{39}}} & {\cellcolor[HTML]{46085C}{\textcolor[HTML]{FFFFFF}{3}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{38598C}{\textcolor[HTML]{FFFFFF}{42}}} & {\cellcolor[HTML]{21A685}{\textcolor[HTML]{FFFFFF}{90}}} & {\cellcolor[HTML]{46307E}{\textcolor[HTML]{FFFFFF}{21}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{52C569}{\textcolor[HTML]{000000}{111}}} \\ 
+37 & {\cellcolor[HTML]{375B8D}{\textcolor[HTML]{FFFFFF}{43}}} & {\cellcolor[HTML]{482475}{\textcolor[HTML]{FFFFFF}{15}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{2C738E}{\textcolor[HTML]{FFFFFF}{58}}} & {\cellcolor[HTML]{22A884}{\textcolor[HTML]{FFFFFF}{91}}} & {\cellcolor[HTML]{355E8D}{\textcolor[HTML]{FFFFFF}{45}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{B8DE29}{\textcolor[HTML]{000000}{136}}} \\ 
+56 & {\cellcolor[HTML]{38588C}{\textcolor[HTML]{FFFFFF}{41}}} & {\cellcolor[HTML]{433D84}{\textcolor[HTML]{FFFFFF}{27}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{25838E}{\textcolor[HTML]{FFFFFF}{68}}} & {\cellcolor[HTML]{27AD81}{\textcolor[HTML]{FFFFFF}{95}}} & {\cellcolor[HTML]{2C728E}{\textcolor[HTML]{FFFFFF}{57}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FDE725}{\textcolor[HTML]{000000}{152}}} \\ 
+409 & {\cellcolor[HTML]{20928C}{\textcolor[HTML]{FFFFFF}{77}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{20928C}{\textcolor[HTML]{FFFFFF}{77}}} & {\cellcolor[HTML]{29AF7F}{\textcolor[HTML]{FFFFFF}{96}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{29AF7F}{\textcolor[HTML]{FFFFFF}{96}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{9}{l}{IT} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+20 & {\cellcolor[HTML]{482071}{\textcolor[HTML]{FFFFFF}{13}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{482071}{\textcolor[HTML]{FFFFFF}{13}}} & {\cellcolor[HTML]{3A538B}{\textcolor[HTML]{FFFFFF}{39}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{3A538B}{\textcolor[HTML]{FFFFFF}{39}}} \\ 
+31 & {\cellcolor[HTML]{450659}{\textcolor[HTML]{FFFFFF}{2}}} & {\cellcolor[HTML]{460B5E}{\textcolor[HTML]{FFFFFF}{4}}} & {\cellcolor[HTML]{450659}{\textcolor[HTML]{FFFFFF}{2}}} & {\cellcolor[HTML]{481567}{\textcolor[HTML]{FFFFFF}{8}}} & {\cellcolor[HTML]{39558C}{\textcolor[HTML]{FFFFFF}{40}}} & {\cellcolor[HTML]{414387}{\textcolor[HTML]{FFFFFF}{30}}} & {\cellcolor[HTML]{404588}{\textcolor[HTML]{FFFFFF}{31}}} & {\cellcolor[HTML]{34B679}{\textcolor[HTML]{FFFFFF}{101}}} \\ 
+34 & {\cellcolor[HTML]{460B5E}{\textcolor[HTML]{FFFFFF}{4}}} & {\cellcolor[HTML]{450659}{\textcolor[HTML]{FFFFFF}{2}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{471063}{\textcolor[HTML]{FFFFFF}{6}}} & {\cellcolor[HTML]{2D718E}{\textcolor[HTML]{FFFFFF}{56}}} & {\cellcolor[HTML]{32648E}{\textcolor[HTML]{FFFFFF}{48}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{3CBB75}{\textcolor[HTML]{000000}{104}}} \\ 
+221 & {\cellcolor[HTML]{481B6D}{\textcolor[HTML]{FFFFFF}{11}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{481B6D}{\textcolor[HTML]{FFFFFF}{11}}} & {\cellcolor[HTML]{306A8E}{\textcolor[HTML]{FFFFFF}{52}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{FFFFFF}{\textcolor[HTML]{000000}{NA}}} & {\cellcolor[HTML]{306A8E}{\textcolor[HTML]{FFFFFF}{52}}} \\ 
+\bottomrule
+\end{tabular*}
+
+}
+
+\end{table}%
+
+\begin{table}
+
+\caption{\label{tbl-onsets}Calculated onset times, when responsive sites
+are grouped by region and age. The last column reports the proportion of
+sites where an onset was found.}
+
+\centering{
+
+\fontsize{9.0pt}{11.0pt}\selectfont
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}rrrrrr}
+\toprule
+Age (wks) & Onset time (ms) & Min. onset & Max. onset & Responsive sites & Prop. with onset \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{V1} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{C9E4CE}{\textcolor[HTML]{000000}{40}}} & 40 & 50 & 21 & {\cellcolor[HTML]{4682B4}{\textcolor[HTML]{FFFFFF}{1.00}}} \\ 
+37 & {\cellcolor[HTML]{C9E4CE}{\textcolor[HTML]{000000}{40}}} & 40 & 50 & 23 & {\cellcolor[HTML]{5087B7}{\textcolor[HTML]{FFFFFF}{0.957}}} \\ 
+56 & {\cellcolor[HTML]{C9E4CE}{\textcolor[HTML]{000000}{40}}} & 40 & 60 & 34 & {\cellcolor[HTML]{4682B4}{\textcolor[HTML]{FFFFFF}{1.00}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{V2} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{ADD6B6}{\textcolor[HTML]{000000}{60}}} & 40 & 110 & 77 & {\cellcolor[HTML]{4984B5}{\textcolor[HTML]{FFFFFF}{0.987}}} \\ 
+37 & {\cellcolor[HTML]{ADD6B6}{\textcolor[HTML]{000000}{60}}} & 40 & 60 & 70 & {\cellcolor[HTML]{4682B4}{\textcolor[HTML]{FFFFFF}{1.00}}} \\ 
+56 & {\cellcolor[HTML]{ADD6B6}{\textcolor[HTML]{000000}{60}}} & 50 & 110 & 61 & {\cellcolor[HTML]{4A84B5}{\textcolor[HTML]{FFFFFF}{0.984}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{V4} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+29 & {\cellcolor[HTML]{A0CFAA}{\textcolor[HTML]{000000}{70}}} & 60 & 150 & 42 & {\cellcolor[HTML]{6E98C2}{\textcolor[HTML]{FFFFFF}{0.810}}} \\ 
+37 & {\cellcolor[HTML]{76BB88}{\textcolor[HTML]{000000}{100}}} & 60 & 130 & 58 & {\cellcolor[HTML]{B3C7DF}{\textcolor[HTML]{000000}{0.431}}} \\ 
+56 & {\cellcolor[HTML]{A0CFAA}{\textcolor[HTML]{000000}{70}}} & 50 & 120 & 68 & {\cellcolor[HTML]{ACC2DC}{\textcolor[HTML]{000000}{0.471}}} \\ 
+409 & {\cellcolor[HTML]{ADD6B6}{\textcolor[HTML]{000000}{60}}} & 50 & 60 & 77 & {\cellcolor[HTML]{4984B5}{\textcolor[HTML]{FFFFFF}{0.987}}} \\ 
+\midrule\addlinespace[2.5pt]
+\multicolumn{6}{l}{IT} \\[2.5pt] 
+\midrule\addlinespace[2.5pt]
+20 & {\cellcolor[HTML]{349F5B}{\textcolor[HTML]{FFFFFF}{140}}} & 140 & 140 & 13 & {\cellcolor[HTML]{F2F5F9}{\textcolor[HTML]{000000}{0.0769}}} \\ 
+31 & {\cellcolor[HTML]{67B47C}{\textcolor[HTML]{000000}{110}}} & 100 & 130 & 8 & {\cellcolor[HTML]{BDCEE3}{\textcolor[HTML]{000000}{0.375}}} \\ 
+34 & {\cellcolor[HTML]{84C293}{\textcolor[HTML]{000000}{90}}} & 90 & 150 & 6 & {\cellcolor[HTML]{89AACD}{\textcolor[HTML]{000000}{0.667}}} \\ 
+221 & {\cellcolor[HTML]{84C293}{\textcolor[HTML]{000000}{90}}} & 90 & 90 & 11 & {\cellcolor[HTML]{EFF3F8}{\textcolor[HTML]{000000}{0.0909}}} \\ 
+\bottomrule
+\end{tabular*}
+
+}
+
+\end{table}%
+
+\section{Inter-family encoding
+differences}\label{inter-family-encoding-differences}
+
+(No clean work yet).
+
+\section{Discussion}\label{discussion}
+
+\subsection{Concerns and assumptions}\label{sec-concerns}
+
+\textbf{Stimulus presentation}. I assumed that stimuli were presented at
+index 50 in each MATLAB file based on the averaged responses.
+
+\textbf{Responsive site calculations}. In split-half correlation
+calculations, I treated the arbitrarily labeled 100 blank images (4
+repetitions each) as unique images like the texture images. However, Lee
+et al.~may have omitted the blanks or summarized them, explaining the
+differences in Table~\ref{tbl-sites}.
+
+\textbf{Aggregating across subjects}. The number of recording sites is
+pretty low, so I aggregated across subjects. For IT, unless the
+responsive site discrepancy is addressed, I might also need to aggregate
+across ages.
+
+\newpage{}
 
 \section{Appendix}\label{appendix}
 
-\subsection{Original recording details table}\label{sec-recording_table}
+\subsection{Recording and behavioral task details}\label{sec-behavior}
 
-Recording ages marked with \texttt{{[}a{]}} were used in the comparison
-in Figure 4D. Table 1 reports the number of visually responsive sites
-(more on this later). The column ``Behavior'' refers to the age range
-when behavioral tests were administered.
+Lee et al.~measured behavioral sensitivities with a four-choice oddity
+task. Monkeys were shown 3 noisy distractors (all unique) and 1
+naturalistic target, with all four images produced from the same family.
+To calculate sensitivity curves, Lee et al.~varied the strength of the
+naturalistic structure/V1-like statistic matching. Behavioral
+sensitivity to naturalistic structure improved with age, though neural
+sensitivity remained consistent.
+
+Table~\ref{tbl-lee_exp} is copied from Table 1 of Lee et al.~
 
 \begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2192}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2192}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2192}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.3425}}@{}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1765}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1765}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1765}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.4706}}@{}}
+\caption{Recording ages marked with {[}a{]} were used in the comparison
+in Figure 4D. The column ``Behavior'' refers to the age range when
+behavioral tests were administered.}\label{tbl-lee_exp}\tabularnewline
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Subject
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Behavior (wks)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Areas
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Recording ages (weeks; number of sites)
+\end{minipage} \\
+\midrule\noalign{}
+\endfirsthead
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Subject
@@ -388,8 +575,8 @@ Recording ages (weeks; number of sites)
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
-M1 (f) & 17--95 & V1-V2 border, V4 & 29 (\emph{n} = 56, 34, 90), 37
-(\emph{n} = 60, 33, 91), 56 (\emph{n} = 61, 32, 95) \\
+M1 (f) & 17--95 & V1-V2, V4 & 29 (\emph{n} = 56, 34, 90), 37 (\emph{n} =
+60, 33, 91), 56 (\emph{n} = 61, 32, 95) \\
 M2 (f) & 16--95 & V2, V4 & 29 (\emph{n} = 92, 21), 37{[}a{]} (\emph{n} =
 85, 45), 56 (\emph{n} = 92, 57) \\
 M3 (m) & 16--65 & FC, IT & 20{[}a{]} (\emph{n} = 87, 39), 31 (\emph{n} =
@@ -404,29 +591,80 @@ M7 (m) & 184--194 & IT & 28 (\emph{n} = 31), 34{[}a{]} (\emph{n} =
 M8 (m) & N/A & V4 & 409{[}a{]} (\emph{n} = 96) \\
 \end{longtable}
 
-\subsection{Behavioral task details}\label{sec-behavior}
+\newpage{}
 
-\subsection{Notes}\label{notes}
-
-\begin{itemize}
-\tightlist
-\item
-  Demean based on blank response
-\item
-\end{itemize}
+\section{References}\label{references}
 
 \phantomsection\label{refs}
 \begin{CSLReferences}{0}{1}
-\bibitem[\citeproctext]{ref-lee_developmentally_2024}
+\bibitem[\citeproctext]{ref-schrimpf_integrative_2020}
 \CSLLeftMargin{1. }%
+\CSLRightInline{Martin Schrimpf, Jonas Kubilius, Michael J. Lee, N.
+Apurva Ratan Murty, Robert Ajemian, James J. DiCarlo. Integrative
+benchmarking to advance neurally mechanistic models of human
+intelligence. Neuron. 2020 Nov 11;108(3):413--23.
+doi:\href{https://doi.org/10.1016/j.neuron.2020.07.040}{10.1016/j.neuron.2020.07.040}}
+
+\bibitem[\citeproctext]{ref-yamins_performance-optimized_2014}
+\CSLLeftMargin{2. }%
+\CSLRightInline{Daniel L. K. Yamins, Ha Hong, Charles F. Cadieu, Ethan
+A. Solomon, Darren Seibert, James J. DiCarlo. Performance-optimized
+hierarchical models predict neural responses in higher visual cortex.
+Proceedings of the National Academy of Sciences. 2014 Jun
+10;111(23):8619--24.
+doi:\href{https://doi.org/10.1073/pnas.1403112111}{10.1073/pnas.1403112111}}
+
+\bibitem[\citeproctext]{ref-nonaka_brain_2021}
+\CSLLeftMargin{3. }%
+\CSLRightInline{Soma Nonaka, Kei Majima, Shuntaro C. Aoki, Yukiyasu
+Kamitani. Brain hierarchy score: Which deep neural networks are
+hierarchically brain-like? {iScience}. 2021 Sep 24;24(9):103013.
+doi:\href{https://doi.org/10.1016/j.isci.2021.103013}{10.1016/j.isci.2021.103013}}
+
+\bibitem[\citeproctext]{ref-schrimpf_brain-score_2020}
+\CSLLeftMargin{4. }%
+\CSLRightInline{Martin Schrimpf, Jonas Kubilius, Ha Hong, Najib J.
+Majaj, Rishi Rajalingham, Elias B. Issa, Kohitij Kar, Pouya Bashivan,
+Jonathan Prescott-Roy, Franziska Geiger, Kailyn Schmidt, Daniel L. K.
+Yamins, James J. DiCarlo. Brain-score: Which artificial neural network
+for object recognition is most brain-like? {[}Internet{]}. {bioRxiv};
+2020 {[}cited 2026 Jun 23{]}. Available from:
+\url{https://www.biorxiv.org/content/10.1101/407007v2}
+doi:\href{https://doi.org/10.1101/407007}{10.1101/407007}}
+
+\bibitem[\citeproctext]{ref-canatar_spectral_2023}
+\CSLLeftMargin{5. }%
+\CSLRightInline{Abdulkadir Canatar, Jenelle Feather, Albert Wakhloo,
+SueYeon Chung. A spectral theory of neural prediction and alignment.
+Advances in Neural Information Processing Systems {[}Internet{]}. 2023
+Dec 15 {[}cited 2025 Oct 31{]};36:47052--80. Available from:
+\url{https://proceedings.neurips.cc/paper_files/paper/2023/hash/9308d1b7d4ae2d3e2e67ae94b1078bf7-Abstract-Conference.html}}
+
+\bibitem[\citeproctext]{ref-lee_developmentally_2024}
+\CSLLeftMargin{6. }%
 \CSLRightInline{Gerick M. Lee, C. L. Rodríguez Deliz, Brittany N.
 Bushnell, Najib J. Majaj, J. Anthony Movshon, Lynne Kiorpes.
 Developmentally stable representations of naturalistic image structure
 in macaque visual cortex. Cell Reports. 2024 Aug 27;43(8).
 doi:\href{https://doi.org/10.1016/j.celrep.2024.114534}{10.1016/j.celrep.2024.114534}}
 
+\bibitem[\citeproctext]{ref-freeman_functional_2013}
+\CSLLeftMargin{7. }%
+\CSLRightInline{Jeremy Freeman, Corey M. Ziemba, David J. Heeger, Eero
+P. Simoncelli, J. Anthony Movshon. A functional and perceptual signature
+of the second visual area in primates. Nat Neurosci. 2013
+Jul;16(7):974--81.
+doi:\href{https://doi.org/10.1038/nn.3402}{10.1038/nn.3402}}
+
+\bibitem[\citeproctext]{ref-portilla_parametric_2000}
+\CSLLeftMargin{8. }%
+\CSLRightInline{Javier Portilla, Eero P. Simoncelli. A parametric
+texture model based on joint statistics of complex wavelet coefficients.
+International Journal of Computer Vision. 2000 Oct 1;40(1):49--70.
+doi:\href{https://doi.org/10.1023/A:1026553619983}{10.1023/A:1026553619983}}
+
 \bibitem[\citeproctext]{ref-brewer_visual_2002}
-\CSLLeftMargin{2. }%
+\CSLLeftMargin{9. }%
 \CSLRightInline{Alyssa A. Brewer, William A. Press, Nikos K. Logothetis,
 Brian A. Wandell. Visual areas in macaque cortex measured using
 functional magnetic resonance imaging. J Neurosci. 2002 Dec
@@ -434,7 +672,7 @@ functional magnetic resonance imaging. J Neurosci. 2002 Dec
 doi:\href{https://doi.org/10.1523/JNEUROSCI.22-23-10416.2002}{10.1523/JNEUROSCI.22-23-10416.2002}}
 
 \bibitem[\citeproctext]{ref-pospisil_revisiting_2025}
-\CSLLeftMargin{3. }%
+\CSLLeftMargin{10. }%
 \CSLRightInline{Dean A. Pospisil, Jonathan W. Pillow. Revisiting the
 high-dimensional geometry of population responses in the visual cortex.
 Proceedings of the National Academy of Sciences. 2025 Nov
@@ -442,14 +680,14 @@ Proceedings of the National Academy of Sciences. 2025 Nov
 doi:\href{https://doi.org/10.1073/pnas.2506535122}{10.1073/pnas.2506535122}}
 
 \bibitem[\citeproctext]{ref-cowley_stimulus-driven_2016}
-\CSLLeftMargin{4. }%
+\CSLLeftMargin{11. }%
 \CSLRightInline{Benjamin R. Cowley, Matthew A. Smith, Adam Kohn, Byron
 M. Yu. Stimulus-driven population activity patterns in macaque primary
 visual cortex. {PLOS} Computational Biology. 2016 Dec 9;12(12):e1005185.
 doi:\href{https://doi.org/10.1371/journal.pcbi.1005185}{10.1371/journal.pcbi.1005185}}
 
 \bibitem[\citeproctext]{ref-ahlheim_estimating_2018}
-\CSLLeftMargin{5. }%
+\CSLLeftMargin{12. }%
 \CSLRightInline{Christiane Ahlheim, Bradley C. Love. Estimating the
 functional dimensionality of neural representations. Neuroimage. 2018
 Oct 1;179:51--62.

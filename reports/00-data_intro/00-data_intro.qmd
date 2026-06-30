@@ -11,6 +11,7 @@ format:
   pdf:
     toc: false
     number-sections: true
+    fontsize: 11pt
     colorlinks: true
     indent: true
     keep-tex: true
@@ -25,13 +26,14 @@ format:
 ---
 
 ```{r, message = FALSE, warning = FALSE}
+nb_id <- "00-data_intro"
+here::i_am(paste0("reports/", nb_id, "/", nb_id, ".qmd"))
+
+library(here)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
-library(ggeffects)
-# library(patchwork)
 library(gt)
-# library(gtsummary)
 
 knitr::opts_chunk$set(echo = F, warning = F, message = F)
 
@@ -41,135 +43,48 @@ theme_set(theme_minimal(base_size = 9))
 
 ## Overview
 
-Lee et al. published and analyzed this dataset in the 2024 *Cell* article "Developmentally stable representations of naturalistic image structure in macaque visual cortex" [@lee_developmentally_2024]. Data and code are available on [Zenodo](https://zenodo.org/records/10888270).
+When modeling brain activations with artificial neural networks (ANNs), previous work found more shared information between early ANN layers and early visual areas and, accordingly, late ANN layers and late visual areas [@schrimpf_integrative_2020; @yamins_performance-optimized_2014; @nonaka_brain_2021]. These analyses often report the quality of fit of linear models predicting brain activity from ANN activations [@schrimpf_brain-score_2020]. However, as discussed in Feather and Canatar (2023), early and late region/layer data are often not sourced from the same experiment. Thus, these results might be confounded with task differences [@canatar_spectral_2023].
+
+In my ADA, I am analyzing dataset provided by Lee et al. (2024) containing longitudinal and inter-region neural responses to visual texture stimuli, available on [Zenodo](https://zenodo.org/records/10888270) [@lee_developmentally_2024]. Lee et al. recorded from 6 macaques with two arrays each, targeting V1, V2, V4, and IT (with the recorded region differing by monkey). All recordings were taken from the same set of texture stimuli.
+
+First, I want to characterize the differences in neural responses for each region and establish differences in encoding of the stimuli. Lee et al. have already performed linear discriminant analysis between noisy/naturalistic textures, and concluded that neural discriminability was highest in V4, lower in V2 and IT, and lowest in V1. For the ADA, I want to characterize encoding differences between texture families. Possible approaches include:
+
+- Multiclass logistic regression (plus some other more detailed interpretation than the inference performance)
+- Some non-parametric clustering strategy
+- Some distance metric then geometric analysis of the distance matrix
+
+Then, to pursue the question of whether early/late model alignment, possible approaches include:
+
+- Fiting linear models to predict the activity in one region from the activity of another region
+- Using V1-like statistics from the provided textures or produce predictors from an established model of V1 firing
+- Training an ANN on the noisy/naturalistic or family classification task then comparing the early/late layer alignment
 
 
+## Data description
 
-## Recording details
+Prior to publishing the data used here, this research group claimed that V2 played a functional role in discriminating noisy vs. naturalistic textures [@freeman_functional_2013]. This follow-up examined how neural and behavioral sensitivity changes over development.
 
-Lee et al. included 8 monkeys and provided experimental details in their first table, which is recopied in the Appendix @sec-recording_table. Behavioral age ranges are copied in @tbl-behavior, but I will skip discussion of the behavioral task for now, with a brief overview in @sec-behavior. The number of visually responsive sites for each area and session can be seen in @tbl-sites (see @sec-active_sites for more on how responsive sites were defined).
+Lee et al. generated stimuli from the Portilla and Simoncelli (PS) parametric texture model [@portilla_parametric_2000], producing 15 samples from 35 families at two levels of coherence (noisy vs. naturalistic). They provided four repetitions of each unique image in each session. They implanted two 96-electrode Utah arrays in 6 monkeys. 
 
-The authors implanted a pair of 96 electrode Utah arrays per monkey (i.e., a total of 192 channels per subject). Regions were determined with anatomical landmarks, physiological features (e.g., response latency), and receptive field characteristics. One array implanted on M1 sat on the border between V1 and V2. For M3, the authors could not reliably determine the location and labeled the region as FC (the *foveal confluence* of V1, V2 and V4), based on terminology from Brewer et al. [@brewer_visual_2002].
+### Texture stimuli
 
-Lee et al. implanted arrays twice in M6, with the recording at 221 weeks taken from the second implantation. Two monkeys (M4 and M5) only underwent behavioral experiments. One monkey (M8) only underwent passive fixation recording. Three monkeys (M1, M2, and M3) performed the behavioral task prior to passive fixation experiments. Two monkeys (M6 and M7) were tested cross-sectionally, where passive fixation recordings were taken prior to behavioral tests (approx. 30 weeks vs. 190 weeks).
+Example textures generated from the Portilla and Simoncelli (2001) are in @fig-textures. The PS parametric texture model is a multilevel generative model that produces sample images by matching visual statistics to an original seed image. The lowest level of the model matches the local statistic of the original image, e.g., the correlation in luminance between adjacent pixels, the average luminance in a small area, or the total variation in luminance. Subsequent layers control higher level correlations, e.g., correlations between neighboring patterns of pixels. 
 
-```{r}
-#| label: tbl-behavior
-#| tbl-cap: Behavioral experiment age ranges. No behavioral experiments were performed with M8. M6 and M7 were tested cross-sectionally after passive fixation experiments.
+Portilla and Simoncelli describe the higher levels as "V1-like" or analogous to the receptive fields of the primary visual cortex. Matching V1-like correlations produces more coherent *naturalistic* structure. Example noisy and naturalistic images can be seen in @fig-textures (left). Though the degree of naturalistic structure varied in the behavioral task, the passive fixation recordings only contained noisy/zero strength textures or full strength naturalistic textures. Lee et al. generated 15 samples of noisy and naturalistic images from 35 families ($15 \times 35 \times 2$ unique images), where each family corresponded to a different original seed image. 
 
-behavior <- data.frame(
-  id = paste0("M", c(1:8)), 
-  sex = c("f", "f", "m", "f", "m", "m", "m", "m"),
-  beh_l = c(17, 16, 16, 27, 17, 184, 184, NA),
-  beh_u = c(95, 95, 65, 53, 64, 194, 194, NA)) %>%
-  mutate(behavior_range = paste0(beh_l, ", ", beh_u)) %>%
-  mutate(sex = case_when(sex == "f" ~ "Female", sex == "m" ~ "Male")) %>%
-  select(-beh_l, -beh_u)
-behavior %>% 
-  gt() %>%
-  tab_options(table.font.size = px(14)) %>%
-  cols_label(
-    id = "Subject ID", 
-    sex = "Sex", 
-    behavior_range = "Age range of behavioral tests (weeks)")
-```
+![(A) Examples of samples generated with varying levels of naturalistic structure. (B) Families of samples generated from different seed images.](lee2024-01.jpg){#fig-textures width=90%}
 
-```{r}
-#| label: tbl-sites
-#| tbl-cap: Number of active recording sites by region and age. Dashes indicate no targeting of the region while zero indicates no active sites detected. No recordings were made in M4 and M5. 
+### Passive recording setup
 
-# relist recording info as nested list
-recording_list <- list(
-  M1 = list(
-    ages = c(29, 37, 56),
-    areas = c("V1", "V2", "V4"), 
-    n_sites = list(
-      c(56, 34, 90), 
-      c(60, 33, 91), 
-      c(61, 32, 95))), 
-  M2 = list(
-    ages = c(29, 37, 56), 
-    areas = c("V2", "V4"), 
-    n_sites = list(
-      c(92, 21), 
-      c(85, 45), 
-      c(92, 57))),
-  M3 = list(
-    ages = c(20, 31, 34), 
-    areas = c("FC", "IT"), 
-    n_sites = list(
-      c(87, 39), 
-      c(81, 40), 
-      c(55, 0))),
-  M4 = list(
-    ages = c(-1),
-    areas = c("None"),
-    n_sites = list(c(-1))),
-  M5 = list(
-    ages = c(-1),
-    areas = c("None"),
-    n_sites = list(c(-1))),
-  M6 = list(
-    ages = c(30, 34, 36, 221), 
-    areas = c("V1", "IT"), 
-    n_sites = list(
-      c(0, 30), 
-      c(0, 56), 
-      c(13, 0), 
-      c(0, 52))),
-  M7 = list(
-    ages = c(28, 34), 
-    areas = c("IT"),
-    n_sites = list(c(31), c(48))),
-  M8 = list(
-    ages = c(409), 
-    areas = c("V4"), 
-    n_sites = list(c(96))))
+At least two recording sessions were conducted for each monkey: once at a juvenile stage (around 30 weeks) and once at an adult stage (around 56 weeks). Within sessions, images were shown in blocks of 8, with 100 ms of the image on screen followed by 100 ms of blank display. Each of the 1050 unique images (35 families, 15 samples, 2 levels of structure) were presented four times within a session. Lee et al. also included 100 uniquely labeled blank images, also repeated four times. This gives a total of $4 \times (35 \times 15 \times 2 + 100) = 4600$ observations per session.
 
-subj_ids <- names(recording_list)
+### Recording details
 
-# make a heatmap-like wide table with all recording sites
-areas <- c("V1", "V2", "V4", "IT", "FC")
+Lee et al. recorded from 6 out of 8 monkeys, with experimental details recopied in Appendix @tbl-lee_exp. The behavioral task is probably not relevant for the ADA, but I included a brief overview in the Appendix @sec-behavior. The number of visually responsive sites for each area and session can be seen in @tbl-sites in @sec-processing.
 
-make_widetable <- function(subj_info, id) {
-  sites_by_area <- matrix(NA, 
-    nrow = length(subj_info$ages), 
-    ncol = length(areas))
-  n_sites <- do.call(rbind, subj_info$n_sites)
-  colnames(n_sites) <- subj_info$areas
-  colnames(sites_by_area) <- areas
-  
-  # fill in available recording sites
-  for (x in subj_info$areas) {
-    area_col <- which(areas == x)
-    if (length(area_col) > 0) # handles area = "None"
-      sites_by_area[, x] <- n_sites[, x]}
-  
-  sites_by_area %>%
-    data.frame() %>%
-    mutate(id = id, age = subj_info$ages, .before = V1) %>%
-    mutate(age = ifelse(age < 0, NA, age))
-}
+The authors implanted a pair of 96 electrode Utah arrays per monkey (i.e., a total of 192 channels per subject). Regions were determined with anatomical landmarks, physiological features (e.g., response latency), and receptive field characteristics. One array implanted on M1 sat on the border between V1 and V2. For M3, the authors could not reliably determine the location and labeled the region as FC (the *foveal confluence* of V1, V2 and V4), based on terminology from Brewer et al. [@brewer_visual_2002]. I removed FC data from analysis. 
 
-recording_wide <- subj_ids %>% 
-  lapply(function(x) make_widetable(recording_list[[x]], x)) %>% 
-  do.call(rbind, .)
-
-recording_wide %>%
-  filter(!id %in% c("M4", "M5")) %>%
-  group_by(id) %>%
-  gt() %>%
-  data_color(
-    columns = areas,
-    method = "numeric", 
-    domain = 0:96,
-    palette = "viridis", 
-    na_color = "white"
-  ) %>%
-  sub_missing(columns = c("age", areas), missing_text = "---") %>%
-  tab_options(table.font.size = px(13)) %>%
-  cols_label(id = "Subject ID", age = "Age (weeks)")
-```
+Lee et al. implanted arrays twice in M6, with the recording at 221 weeks taken from the second implantation. Two monkeys (M4 and M5) only underwent behavioral experiments. One monkey (M8) only underwent passive fixation recording. Three monkeys (M1, M2, and M3) performed the behavioral task prior to passive fixation experiments. Two monkeys (M6 and M7) provided passive fixation recordings prior to undergoing behavioral tests.
 
 ```{r recording longtable, eval = F, include = F}
 # even longer table
@@ -201,38 +116,146 @@ recording_long <- subj_ids %>%
   do.call(rbind, .)
 ```
 
-## Features of the provided electrode data
+The provided [Zenodo](https://zenodo.org/records/10888270) data files do not contain the original spike timings. Multiunit threshold crossings, or multiunit activations (MUAs), were created from binning spikes into 10 ms windows. Single neuron spikes seem more common in dimensionality analyses [@pospisil_revisiting_2025; @cowley_stimulus-driven_2016], but other work covers functional dimensionality estimation on fMRI data [@ahlheim_estimating_2018], so this aggregation is probably fine for the purpose of the ADA.
 
-The provided [Zenodo](https://zenodo.org/records/10888270) data files do not contain raw recording data. **Multiunit threshold crossings** were binned into 10 ms windows (@sec-mua). 
+## Processing multiunit activations {#sec-processing}
 
-## Determining visually responsive sites {#sec-active_sites}
-
-To find visually responsive sites, Lee et al. compared responses to stimuli or blank images. They averaged the site response separately for even and odd repetitions of each stimulus (so averaging across two observations twice) then kept sites with a Pearson correlation of $\rho \geq 0.4$.  
-
-They subsequently defined the onset time for a site as the first time bin with a $|d'| \geq 0.4$ where the two subsequent windows also produced $|d'| \geq 0.4$ of the same sign (see @eq-dprime for the definition of $d'$). They then defined the population onset time as the median onset time across visually responsive sites. For downstream analyses, Lee et al. summed responses across the 150 ms window after population onset time.  
+To find visually responsive (reliable) sites, Lee et al. averaged the site response separately for even and odd repetitions of each unique image stimulus (i.e., two groups of two repetitions each) then kept sites with a Pearson correlation of $\rho \geq 0.4$. Lee et al. defined the onset time for a site as the first time bin with a $|d'| \geq 0.4$ between non-blank and blank stimuli where the two subsequent windows also produced $|d'| \geq 0.4$ of the same sign (see @eq-dprime for the definition of $d'$). They defined the population onset time as the median across visually responsive sites.
 
 $$
 d' = \frac{\mu_1 - \mu_0}{\sqrt{(\sigma^2_1 + \sigma^2_0)/2}}
 $$ {#eq-dprime}
 
-## Questions, concerns, and next steps {#sec-discussion}
+The procedure for summarizing data can be outlined as:
 
-### Multiunit threshold crossings {#sec-mua}
+1. Find a temporary population onset time, with $d'$ calculated between blanks and stimuli. The search window is 0 to 200 ms after stimulus presentation. If no onset time is found, use 100 ms as a placeholder. 
+2. Determine the responsive sites with signals averaged over a 150 ms window starting at the temporary onset time. 
+3. Recalculate the population onset time based on the responsive sites.
+4. For downstream analyses, sum responses across the 150 ms window after population onset time. 
 
-Single neuron spikes seem more common in dimensionality analyses ([@pospisil_revisiting_2025; @cowley_stimulus-driven_2016]), though I am not sure if there is existing work fully characterizing whether this provides meaningful advantages. Some work covers functional dimensionality estimation on fMRI data, so I infer that some level of signal aggregation does not immediately disqualify this analysis [@ahlheim_estimating_2018].
+I found fewer reliable recording sites than Lee et al., seen in @tbl-sites (see @sec-concerns for discussion). @tbl-onsets contain my calculated onset times and the proportion of reliable sites where onset time could be found. As a sanity check, onset times increase from V1 to IT. The proportion of reliable sites with derivable onset time decreases along region hierarchy. 
 
+```{r}
+#| label: tbl-sites
+#| tbl-cap: Number of reliable recording sites by region and age, with arbitrarily labeled arrays. Dashes indicate no targeting of the region while zero indicates no active sites detected. No recordings were made in M4 and M5. Outside of the V1/V2 recording in M1, the number of reliable sites are taken out 96 total sites.
 
+resp_sites <- read.csv(here("results", "20260604", "n_resp.csv"))
+resp_sites <- resp_sites %>%
+  group_by(region, age) %>%
+  mutate(subj_i = paste0("me_", row_number())) %>%
+  select(-subj) %>%
+  pivot_wider(names_from = subj_i, values_from = n_resp, values_fill = NA) %>% 
+  mutate(me_total = rowSums(across(where(is.numeric)), na.rm=TRUE)) %>%
+  group_by(region) %>%
+  filter(region != "FC")
 
+lee <- read.csv(here("reports", nb_id, "n_resp_lee.csv"))
+lee <- lee %>%
+  group_by(region, age) %>%
+  mutate(subj_i = paste0("lee_", row_number())) %>%
+  select(-subj) %>%
+  pivot_wider(names_from = subj_i, values_from = n_resp, values_fill = NA) %>% 
+  mutate(lee_total = rowSums(across(where(is.numeric)), na.rm=TRUE)) %>%
+  group_by(region) %>%
+  filter(region != "FC")
+
+resp_vs <- left_join(resp_sites, lee, by = c("region", "age"))
+resp_vs %>%
+  gt() %>%
+  tab_options(table.font.size = 12) %>%
+  tab_spanner(
+    label = "My calculations", 
+    columns = me_1:me_total) %>%
+  tab_spanner(
+    label = "Lee et al.", 
+    columns = lee_1:lee_total) %>%
+  data_color(
+    columns = me_1:lee_total, 
+    method = "numeric", 
+    domain = 0:152,
+    palette = "viridis", 
+    na_color = "white") %>%
+  cols_label(
+    age = "Age (wks)", 
+    me_1 = "Array 1", 
+    me_2 = "Array 2", 
+    me_3 = "Array 3", 
+    me_total = "Total sites", 
+    lee_1 = "Array 1", 
+    lee_2 = "Array 2", 
+    lee_3 = "Array 3", 
+    lee_total = "Total sites") 
+```
+
+```{r}
+#| label: tbl-onsets
+#| tbl-cap: Calculated onset times, when responsive sites are grouped by region and age. The last column reports the proportion of sites where an onset was found. 
+
+onsets <- read.csv(here("results", "20260604", "onsets.csv")) %>%
+  filter(region != "FC") %>%
+  mutate(region = factor(region, levels = c("V1", "V2", "V4", "IT")))
+
+onsets %>%
+  select(-n_na) %>%
+  mutate(
+    onset = onset * 10, 
+    min_onset = min_onset * 10, 
+    max_onset = max_onset * 10) %>%
+  rowwise() %>%
+  mutate(prop_onset = max(prop_onset, 0)) %>%
+  group_by(region) %>%
+  arrange(region) %>%
+  gt() %>%
+  tab_options(table.font.size = 12) %>%
+  fmt_number(columns = prop_onset, n_sigfig = 3) %>% 
+  data_color(
+    columns = onset, 
+    method = "numeric", 
+    domain = 0:150,
+    palette = c("white", "#1a9850"), 
+    na_color = "gray60") %>%
+  data_color(
+    columns = prop_onset, 
+    method = "numeric", 
+    domain = 0:1,
+    palette = c("white", "steelblue"), 
+    na_color = "gray60") %>%
+  cols_label(
+    age = "Age (wks)", 
+    onset = "Onset time (ms)", 
+    min_onset = "Min. onset", 
+    max_onset = "Max. onset", 
+    resp_total = "Responsive sites", 
+    prop_onset = "Prop. with onset") 
+```
+
+## Inter-family encoding differences
+
+(No clean work yet). 
+
+## Discussion 
+
+### Concerns and assumptions {#sec-concerns}
+
+**Stimulus presentation**. I assumed that stimuli were presented at index 50 in each MATLAB file based on the averaged responses.
+
+**Responsive site calculations**. In split-half correlation calculations, I treated the arbitrarily labeled 100 blank images (4 repetitions each) as unique images like the texture images. However, Lee et al. may have omitted the blanks or summarized them, explaining the differences in @tbl-sites.
+
+**Aggregating across subjects**. The number of recording sites is pretty low, so I aggregated across subjects. For IT, unless the responsive site discrepancy is addressed, I might also need to aggregate across ages. 
+
+{{< pagebreak >}}
 
 ## Appendix
 
-### Original recording details table {#sec-recording_table}
+### Recording and behavioral task details {#sec-behavior}
 
-Recording ages marked with `[a]` were used in the comparison in Figure 4D. Table 1 reports the number of visually responsive sites (more on this later). The column "Behavior" refers to the age range when behavioral tests were administered. 
+Lee et al. measured behavioral sensitivities with a four-choice oddity task. Monkeys were shown 3 noisy distractors (all unique) and 1 naturalistic target, with all four images produced from the same family. To calculate sensitivity curves, Lee et al. varied the strength of the naturalistic structure/V1-like statistic matching. Behavioral sensitivity to naturalistic structure improved with age, though neural sensitivity remained consistent. 
+
+@tbl-lee_exp is copied from Table 1 of Lee et al. 
 
 | Subject | Behavior (wks) | Areas | Recording ages (weeks; number of sites) |
-|----------------|----------------|----------------|-------------------------|
-| M1 (f) | 17–95 | V1-V2 border, V4 | 29 (*n* = 56, 34, 90), 37 (*n* = 60, 33, 91), 56 (*n* = 61, 32, 95) |
+|------|------|------|----------------|
+| M1 (f) | 17–95 | V1-V2, V4 | 29 (*n* = 56, 34, 90), 37 (*n* = 60, 33, 91), 56 (*n* = 61, 32, 95) |
 | M2 (f) | 16–95 | V2, V4 | 29 (*n* = 92, 21), 37\[a\] (*n* = 85, 45), 56 (*n* = 92, 57) |
 | M3 (m) | 16–65 | FC, IT | 20\[a\] (*n* = 87, 39), 31 (*n* = 81, 40), 34 (*n* = 55, 0 FC only) |
 | M4 (f) | 27–53 | N/A | N/A |
@@ -242,9 +265,130 @@ Recording ages marked with `[a]` were used in the comparison in Figure 4D. Table
 | M7 (m) | 184–194 | IT | 28 (*n* = 31), 34\[a\] (*n* = 48) |
 | M8 (m) | N/A | V4 | 409\[a\] (*n* = 96) |
 
-### Behavioral task details {#sec-behavior}
+: Recording ages marked with [a] were used in the comparison in Figure 4D. The column "Behavior" refers to the age range when behavioral tests were administered. {#tbl-lee_exp font-size=80%}
 
-### Notes 
+```{r, eval = F, include = F}
+#| label: tbl-sites_lee
+#| tbl-cap: Number of responsive recording sites by region and age. Dashes indicate no targeting of the region while zero indicates no active sites detected. No recordings were made in M4 and M5. Outside of the V1/V2 recording in M1, the number of reliable sites are taken out 96 total sites.
 
-- Demean based on blank response
-- 
+# relist recording info as nested list
+recording_list <- list(
+  M1 = list(
+    ages = c(29, 37, 56),
+    areas = c("V1", "V2", "V4"),
+    n_sites = list(
+      c(56, 34, 90),
+      c(60, 33, 91),
+      c(61, 32, 95))),
+  M2 = list(
+    ages = c(29, 37, 56),
+    areas = c("V2", "V4"),
+    n_sites = list(
+      c(92, 21),
+      c(85, 45),
+      c(92, 57))),
+  M3 = list(
+    ages = c(20, 31, 34),
+    areas = c("FC", "IT"),
+    n_sites = list(
+      c(87, 39),
+      c(81, 40),
+      c(55, 0))),
+  M4 = list(
+    ages = c(-1),
+    areas = c("None"),
+    n_sites = list(c(-1))),
+  M5 = list(
+    ages = c(-1),
+    areas = c("None"),
+    n_sites = list(c(-1))),
+  M6 = list(
+    ages = c(30, 34, 36, 221),
+    areas = c("V1", "IT"),
+    n_sites = list(
+      c(0, 30),
+      c(0, 56),
+      c(13, 0),
+      c(0, 52))),
+  M7 = list(
+    ages = c(28, 34),
+    areas = c("IT"),
+    n_sites = list(c(31), c(48))),
+  M8 = list(
+    ages = c(409),
+    areas = c("V4"),
+    n_sites = list(c(96))))
+
+subj_ids <- names(recording_list)
+
+# make a heatmap-like wide table with all recording sites
+areas <- c("V1", "V2", "V4", "IT", "FC")
+
+make_widetable <- function(subj_info, id) {
+  sites_by_area <- matrix(NA,
+    nrow = length(subj_info$ages),
+    ncol = length(areas))
+  n_sites <- do.call(rbind, subj_info$n_sites)
+  colnames(n_sites) <- subj_info$areas
+  colnames(sites_by_area) <- areas
+
+  # fill in available recording sites
+  for (x in subj_info$areas) {
+    area_col <- which(areas == x)
+    if (length(area_col) > 0) # handles area = "None"
+      sites_by_area[, x] <- n_sites[, x]}
+
+  sites_by_area %>%
+    data.frame() %>%
+    mutate(id = id, age = subj_info$ages, .before = V1) %>%
+    mutate(age = ifelse(age < 0, NA, age))
+}
+
+recording_wide <- subj_ids %>%
+  lapply(function(x) make_widetable(recording_list[[x]], x)) %>%
+  do.call(rbind, .)
+
+recording_wide %>%
+  filter(!id %in% c("M4", "M5")) %>%
+  group_by(id) %>%
+  gt() %>%
+  data_color(
+    columns = areas,
+    method = "numeric",
+    domain = 0:96,
+    palette = "viridis",
+    na_color = "white"
+  ) %>%
+  sub_missing(columns = c("age", areas), missing_text = "---") %>%
+  tab_options(table.font.size = px(13)) %>%
+  cols_label(id = "Subject ID", age = "Age (weeks)")
+```
+
+```{r, include = F, eval = F}
+#| label: tbl-behavior
+#| tbl-cap: Behavioral experiment age ranges. No behavioral experiments were performed with M8. M6 and M7 were tested cross-sectionally after passive fixation experiments.
+
+behavior <- data.frame(
+  id = paste0("M", c(1:8)), 
+  sex = c("f", "f", "m", "f", "m", "m", "m", "m"),
+  beh_l = c(17, 16, 16, 27, 17, 184, 184, NA),
+  beh_u = c(95, 95, 65, 53, 64, 194, 194, NA)) %>%
+  mutate(behavior_range = paste0(beh_l, ", ", beh_u)) %>%
+  mutate(sex = case_when(sex == "f" ~ "Female", sex == "m" ~ "Male")) %>%
+  select(-beh_l, -beh_u)
+behavior %>% 
+  gt() %>%
+  tab_options(table.font.size = px(14)) %>%
+  cols_label(
+    id = "Subject ID", 
+    sex = "Sex", 
+    behavior_range = "Age range of behavioral tests (weeks)")
+```
+
+{{< pagebreak >}}
+
+## References
+
+::: {#refs}
+:::
+
