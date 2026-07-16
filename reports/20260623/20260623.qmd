@@ -3,8 +3,8 @@ title: "(ADA) Introduction to the Lee et al. visual cortex recording data"
 author: "Al Xin"
 date: last-modified
 date-format: MMM D, YYYY
-bibliography: refs.bib
-csl: nlm.csl
+bibliography: ../refs.bib
+csl: ../nlm.csl
 execute:
   echo: false
 format:
@@ -26,7 +26,7 @@ format:
 ---
 
 ```{r, message = FALSE, warning = FALSE}
-nb_id <- "00-data_intro"
+nb_id <- "20260623"
 here::i_am(paste0("reports/", nb_id, "/", nb_id, ".qmd"))
 
 library(here)
