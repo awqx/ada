@@ -1,0 +1,416 @@
+---
+title: "Regression approach to representation"
+date: 2026-06-25
+author: Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260625"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+t2_dir <- here("data", "raw", "6reps") 
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Data
+
+### Loading
+
+See `20260521.qmd` for reference. Like before, the stimulus labels are identical across all files, though the block order may differ. For this data, subject info is aggregated, and I cannot confidently identify which subject each recording site belongs to. Also, like before, I removed all `NA` sites and converted the binned MUAs to `qs2` files for faster loading.  
+
+```{r, eval = F}
+source(here("R", "str_info.R"))
+files <- list.files(t2_dir)
+regions <- sapply(files, function(f) file_info(f)$region)
+
+get_stims <- function(x) {
+  stims <- data.frame(x$save.label)
+  colnames(stims) <- c(
+    "coherence", "family", "id", "coherence_t3", "block_order", "id_blank")
+  select(stims, -coherence_t3)}
+
+block_list <- list()
+
+# get arbitrary identical stimulus labels
+stims_ref <- list.files(t2_dir) %>%
+  .[1] %>% # arbitrary index
+  file.path(t2_dir, .) %>%
+  R.matlab::readMat() %>%
+  get_stims()
+
+# something weird with id_blank here? # maybe used as repetition
+stimuli <- stims_ref %>%
+  select(-block_order) %>%
+  rename(repetition = id_blank)
+
+block_list <- lapply(
+  files, 
+  function(f) {
+    here(t2_dir, f) %>%
+      R.matlab::readMat() %>%
+      .$save.label %>%
+      .[, 5]})
+
+names(block_list) <- regions
+write.csv(
+  data.frame(block_list),
+  file.path(out_dir, "block_order.csv"), row.names = F)
+
+write.csv(stimuli, file.path(out_dir, "stimuli.csv"), row.names = F)
+```
+
+```{r, eval = F}
+library(cli)
+files <- list.files(t2_dir)
+
+for (f in files) {
+  f_details <- file_info(f)
+  # start messaging block
+  cli_text(paste0(
+    "Reading region {f_details$region}..."))
+  dat <- file.path(t2_dir, f) %>% R.matlab::readMat()
+  bins <- dat$bins
+
+  # detect missing channels in 3rd dimension
+  missing_sites <- is.na(bins[1, 1, ])
+  bins <- bins[, , !missing_sites]
+  if (sum(missing_sites) > 0)
+    cli_alert_info("Found {sum(missing_sites)} missing sites.")
+  
+  f_name <- paste0(f_details$region, ".qs2")
+  qs2::qs_save(bins, file.path(out_dir, f_name))
+  # close messaging block
+}
+```
+
+### Predictors
+
+As review, the stimulus labels are: 
+
+- `coherence`: `0` when blank, `1` when noisy, `2` when naturalistic. 
+- `family`: `0` when blank, two or three digit integer code otherwise.
+- `id`: `0` when blank, integer from `1` to `15` otherwise. 
+- `id_blank`: integer from `1` to `100` if blank, `0` otherwise. 
+- `repetition`: column constructed from counting the repetition of `coherence`, `family`, and `id` or `id_blank` combo.
+
+For regression, unique values of `id`, `id_blank`, or `repetition` will be ignored. These can be considered repetitions of the unique `coherence` and `family` combinations. There are 36 unique family values, including the 35 texture families and a blank family. 
+
+Besides the above stimulus labels, the `block_order`, which takes values 1 through 8, might also be informative. If needed, indicators like `is_first` or `is_last` might be a working simplification for `block_order`. 
+
+So, the current set of predictors are:
+
+- `region`: categorical, with values `"V1"`, `"V2"`, `"V4"`, and `"IT"`. 
+- `coherence`: categorical, represented as dummy variables `is_noisy` and `is_natur`, with `is_blank` implicit. 
+- `family`: categorical, represented as 35 dummy variables. 
+- `block_order`: categorical, represented as 7 dummy variables. 
+
+Within each unique region, there are 6300 texture observations and 600 blank observations. Omitting `block_order`, there are 90 repeated observations for each combination of `coherence` and `family`. The distribution of `block_order` is not uniform for these combinations. 
+
+### Potential predictors 
+
+Unfortunately, according to Gerick, the parameters used in the texture generation model are probably lost. However, he mentioned that it should be possible to get the original stimulus images, i.e., the images presented during the passive fixation recordings. If I get these images, I should be able to design a few continuous predictors based off of similar statistics to the Portilla and Simoncelli parametric texture model, e.g., spatial correlations, luminance variance, etc. 
+
+## PSTHs
+
+PSTHs taken over all stimuli and sites are plotted in @fig-psths. These are basically consistent with Lee et al.'s results, up to some scaling. The original data only contains stimuli that were first in their block, possibly explaining the somewhat higher response rates in the published paper. The PSTH for IT shows carry-over from the previous stimulus, which is a known problem that I discussed with Gerick.   
+
+```{r}
+block_order <- read.csv(here(out_dir, "block_order.csv"))
+stimuli <- read.csv(file.path(out_dir, "stimuli.csv"))
+```
+
+```{r, eval = F}
+mua_psth <- function(
+  mua,
+  l_idx = 50,
+  u_idx = 100,
+  incl_stims = NULL,
+  incl_sites = NULL
+) {
+  if (is.null(incl_sites))
+    incl_sites <- 1:dim(mua)[3]
+  if (is.null(incl_stims))
+    incl_stims <- 1:dim(mua)[1]
+  mua <- mua[incl_stims, l_idx:u_idx, incl_sites]
+  
+  psths <- lapply(0:2, function(x)
+    apply(mua[stimuli$coherence[incl_stims] == x, , ], 2, mean)) %>%
+    do.call(cbind, .) %>%
+    data.frame()
+  colnames(psths) <- c("blank", "noisy", "natur")
+  psths <- psths %>%
+    mutate(t = 10 * c(0:(u_idx - l_idx))) %>%
+    pivot_longer(-t, names_to = "coherence", values_to = "mua")
+}
+
+regions <- c("V1", "V2", "V4", "IT")
+# region <- regions[1]
+# mua <- qs_read(here(out_dir, paste0(region, ".qs2")))
+# psth <- mua_psth(mua)
+
+psths <- lapply(regions, function(x) {
+  qs_read(here(out_dir, paste0(x, ".qs2"))) %>%
+    mua_psth() %>%
+    mutate(region = x) }) %>%
+  do.call(rbind, .)
+
+write.csv(psths, here(out_dir, "psths.csv"), row.names = F)
+```
+
+```{r}
+#| label: fig-psths
+#| fig-cap: "Averaged response rates for blank, noisy, and naturalistic textures for each region."
+#| fig-width: 5
+#| fig-height: 2
+regions <- c("V1", "V2", "V4", "IT")
+psths <- read.csv(file.path(out_dir, "psths.csv"))
+psths %>%
+  mutate(mua = mua * 100) %>%
+  # note bespoke cutoffs for PSTH by region
+  filter(t <= 320) %>%
+  filter(!(region == "V1" & t > 210)) %>%
+  filter(!(region == "V2" & t > 250)) %>%
+  filter(!(region == "V4" & t > 250)) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = replace_values(
+    coherence,
+    "blank" ~ "Blank",
+    "natur" ~ "Naturalistic",
+    "noisy" ~ "Noisy" )) %>%
+  ggplot(aes(x = t, y = mua, color = coherence)) +
+    geom_line() +
+    facet_wrap(vars(region), scales = "free_y", nrow = 1) +
+    labs(
+      color = "Stimulus type", 
+      y = "Response rate (imp/s)", 
+      x = "Time from stimulus (ms)") +
+    theme(legend.position = "bottom", panel.grid = element_blank())
+# ggsave(file.path(res_dir, "psth.png"), width = 6, height = 2.5)
+```
+
+## Onset times
+
+```{r, eval = F, include = F}
+# troubleshooting
+stimuli <- read.csv(file.path(out_dir, "stimuli.csv"))
+onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+img_grp <- stimuli %>%
+  group_by(coherence, family) %>%
+  mutate(x = cur_group_id()) %>% 
+  .$x
+even_odd <- stimuli$repetition %% 2
+
+mua <- qs_read(here(out_dir, "V1.qs2"))
+stim_idx = 50; l_stim = 20; l_window = 15
+
+onset <- onset_time(mua[, stim_idx:(stim_idx + l_stim), ], onset_grp)
+mua_avg <- apply(
+  mua[, onset:(onset + l_window - 1) + stim_idx - 1, ], c(1, 3), mean)
+
+corr_df <- data.frame(channel = mua_avg[, 1], img_grp, even_odd) %>%
+  group_by(even_odd) %>%
+  group_split(.keep = F) %>%
+  sapply(., function(df)
+    df %>%
+      group_by(img_grp) %>%
+      summarize(channel = mean(channel)) %>%
+      .$channel) 
+responsive_sites(mua, onset_grp, img_grp, even_odd)
+```
+
+
+```{r}
+library(cli)
+source(here("R", "responsive_sites.R"))
+resp_thresh <- 0.4
+
+stimuli <- read.csv(file.path(out_dir, "stimuli.csv"))
+onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+img_grp <- stimuli %>%
+  group_by(coherence, family) %>%
+  mutate(x = cur_group_id()) %>% 
+  .$x
+even_odd <- stimuli$repetition %% 2
+
+mua_ids <- c("V1", "V2", "V4", "IT")
+
+split_corrs <- lapply(
+  cli_progress_along(mua_ids),
+  function(f) {
+    mua <- qs_read(here(out_dir, paste0(mua_ids[f], ".qs2")))
+    responsive_sites(mua, onset_grp, img_grp, even_odd)})
+resp_sites <- lapply(split_corrs, function(x) which(x > resp_thresh))
+
+names(split_corrs) <- mua_ids
+names(resp_sites) <- mua_ids
+
+saveRDS(split_corrs, file.path(out_dir, "split_corrs.RDS"))
+saveRDS(resp_sites, file.path(out_dir, "resp_sites.RDS"))
+
+n_resp <- lapply(
+  mua_ids, 
+  function(id) {
+    data.frame(region = id) %>% 
+      mutate(n_resp = length(resp_sites[[id]]))}) %>%
+  do.call(rbind, .) %>%
+  mutate(region = factor(region, levels = mua_ids))
+
+write.csv(n_resp, file.path(res_dir, "n_resp.csv"), row.names = F)
+```
+
+```{r, eval = F, include = F}
+library(cli)
+source(here("R", "onset_time.R"))
+resp_thresh <- 0.4
+mua_ids <- c("V1", "V2", "V4", "IT")
+split_corrs <- readRDS(file.path(out_dir, "split_corrs.RDS"))
+stimuli <- read.csv(file.path(out_dir, "stimuli.csv"))
+
+onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+onsets <- lapply(
+  cli_progress_along(mua_ids), 
+  function(i) {
+    mua_id <- mua_ids[i]
+    resp_idx <- split_corrs[[mua_id]] > resp_thresh
+    
+    if (sum(resp_idx) < 1) return(NA)
+    
+    mua <- qs_read(here(out_dir, paste0(mua_id, ".qs2")))
+    onset_time(mua[, 50:70, resp_idx], onset_grp, all_times = T)})
+names(onsets) <- mua_ids
+saveRDS(onsets, file.path(out_dir, "onsets.RDS"))
+```
+
+```{r, eval = F}
+default_onset <- 10 
+onsets <- readRDS(file.path(out_dir, "onsets.RDS"))
+n_resp <- read.csv(file.path(res_dir, "n_resp.csv"))
+mua_ids <- c("V1", "V2", "V4", "IT")
+
+onset_df <- lapply(
+  mua_ids, 
+  function(mua_id) {
+    # onset_ids <- str_subset(names(onsets), i)
+    onset_grp <- onsets[[mua_id]]
+    onset <- median(onset_grp, na.rm = T) - 2 
+    onset <- ifelse(is.na(onset), default_onset, floor(onset))
+
+    resp_total <- n_resp %>%
+      filter(region == mua_id) %>%
+      .$n_resp %>% sum()
+    
+    data.frame(region = mua_id) %>%
+      mutate(
+        onset = onset, 
+        n_na = sum(is.na(onset_grp)),
+        min_onset = min(onset_grp, na.rm = T) - 2, 
+        max_onset = max(onset_grp, na.rm = T) - 2, 
+        resp_total = resp_total) %>%
+      mutate(prop_onset = (resp_total - n_na) / max(resp_total, 1))}) %>%
+  do.call(rbind, .) 
+
+write.csv(onset_df, file.path(res_dir, "onsets.csv"), row.names = F)
+```
+
+## MUA averages
+
+```{r, eval = F, include = F}
+library(cli)
+library(stringr)
+
+l_window <- 15
+stim_idx <- 50
+
+onsets <- read.csv(file.path(res_dir, "onsets.csv"))
+resp_sites <- readRDS(file.path(out_dir, "resp_sites.RDS"))
+mua_ids <- names(resp_sites)
+
+all_avgs <- lapply(
+  cli_progress_along(mua_ids), 
+  function(x) {
+    mua_id <- mua_ids[x]
+    onset <- onsets %>% filter(region == mua_id) %>% .$onset
+    mua <- qs_read(file.path(out_dir, paste0(mua_id, ".qs2")))
+    apply(mua[, onset:(onset + l_window - 1) + stim_idx - 1, ], c(1, 3), mean)
+})
+names(all_avgs) <- mua_ids
+qs_save(all_avgs, file.path(out_dir, "avgs.qs2"))
+```
+
+## Exploratory analyses
+
+### Linear regression
+
+A separate linear model was fit for each site. 
+
+```{r, eval = F}
+regions <- c("V1", "V2", "V4", "IT")
+
+X <- stimuli %>% 
+  select(coherence, family) %>%
+  mutate(coherence = factor(coherence), family = factor(family))
+
+fit_lm <- function(mua, X, nm = NULL) {
+  n_sites <- dim(mua)[2]
+
+  res <- lapply(cli_progress_along(1:n_sites, name = nm), function(i) {
+    dat <- mutate(X, y = mua[, i])
+    fit <- lm(y ~ ., dat)
+    df <- summary(fit)$coefficients %>%
+      data.frame() %>%
+      tibble::rownames_to_column()
+    colnames(df) <- c("x", "beta_hat", "se", "t_val", "p_val")
+    
+    list(
+      coefs = df %>% mutate(site = i), 
+      resids = residuals(fit), 
+      r_sq = summary(fit)$r.squared) })
+  
+  list(
+    r_sq = sapply(res, function(x) x[["r_sq"]]), 
+    coefs = lapply(res, function(x) x[["coefs"]]) %>% do.call(rbind, .), 
+    resids = lapply(res, function(x) x[["resids"]]) %>% do.call(cbind, .))
+}
+
+lm_fits <- lapply(regions, function(region) {
+  mua <- qs_read(here(out_dir, "avgs.qs2")) %>% .[[region]] 
+  fit_lm(mua, X, region) }) 
+
+names(lm_fits) <- regions
+qs_save(lm_fits, here(out_dir, "lm_fits.qs2"))
+```
+
