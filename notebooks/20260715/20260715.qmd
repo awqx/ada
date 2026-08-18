@@ -336,6 +336,7 @@ avg_region_dir <- function(region, dir_nm = "data") {
 In addition to the calculated $d'$ values, I will also be saving the mean distances and the combined variances (the diagonal of the combined covariance matrix). There does not seem to be a marked difference in the distribution of the Mahalanobis distances with or without shrinkage during estimation of the covariance matrix (@fig-mahalanobis_shrinkage). Furthermore, while the calculated distances tend to increase with more sub-sampled sites, the overall trend in the distributions of the distance values is consistent (@fig-mahalanobis_sites).
 
 ```{r}
+pf_dir <- here(out_dir, "pairwise_family")
 read_multi_d <- function(d_dir, shrink = T, n_sites = 30) {
   md_dir <- ifelse(shrink, "multi_d_shrink", "multi_d")
   lapply(
@@ -357,6 +358,41 @@ multi_ds <- apply(
   do.call(rbind, .) %>%
   mutate(shrink = as.character(shrink)) %>%
   mutate(shrink = replace_values(shrink, "1" ~ "Shrinkage", "0" ~ "Ordinary"))
+
+write.csv(multi_ds, here(res_dir, "pf_dM.csv"), row.names = F)
+```
+
+```{r}
+read_mu_var <- function(d_dir, shrink = T, n_sites = 30) {
+  md_dir <- ifelse(shrink, "multi_d_shrink", "multi_d")
+  lapply(
+    regions, 
+    function(region) {
+      mu_diff <- here(
+        d_dir, md_dir, paste("n", n_sites, sep = ""), region, "mu_diff.csv") %>%
+        read.csv() %>%
+        apply(., MARGIN = 1, mean) %>%
+        data.frame(val = ., region = region, measure = "mu_diff") 
+      combvar <- here(
+        d_dir, md_dir, paste("n", n_sites, sep = ""), region, "combvar.csv") %>%
+        read.csv() %>%
+        apply(., MARGIN = 1, mean) %>%
+        data.frame(val = ., region = region, measure = "combvar") 
+      rbind(mu_diff, combvar)
+    }) %>%
+    do.call(rbind, .) %>%
+    mutate(
+      region = factor(region, levels = regions), 
+      n_sites = n_sites,
+      shrink = shrink)
+}
+dM_mu_var <- apply(
+  expand.grid(list(shrink = c(T, F), n_sites = 10 * 1:4)), 1, 
+  function(x) read_mu_var(pf_dir, x[1], x[2])) %>%
+  do.call(rbind, .) %>%
+  mutate(shrink = as.character(shrink)) %>%
+  mutate(shrink = replace_values(shrink, "1" ~ "Shrinkage", "0" ~ "Ordinary"))
+write.csv(dM_mu_var, here(res_dir, "pf_dM_mu_var.csv"), row.names = F)
 ```
 
 

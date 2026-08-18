@@ -1,0 +1,319 @@
+---
+title: "Randomized dichotomy d' calculations"
+date: last-modified
+author: \small Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260723"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(ggplot2)
+library(qs2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+t2_dir <- here("data", "raw", "6reps") 
+data_dir <- here("data", "processed", "20260625")
+regions <- c("V1", "V2", "V4", "IT")
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Data
+
+### Loading
+
+See `20260625.qmd` for reference. For now, analysis will be limited to reliable sites and images with naturalistic structure. 
+
+```{r}
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+resp_sites <- readRDS(here(data_dir, "resp_sites.RDS"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+
+natur_idx <- stimuli$coherence == 2
+avgs <- lapply(regions, 
+  function(x) avgs[[x]][natur_idx, resp_sites[[x]]])
+names(avgs) <- regions
+
+stimuli <- stimuli[natur_idx, ] 
+```
+
+## Methods
+
+### Mahalanobis distance
+
+A multivariate distance value can be calculated with the typical Mahalanobis distance formula, i.e., 
+$$
+d_M (\mathbf{x}, \mathbf{y}) = \sqrt{(\mathbf{x} - \mathbf{y})^\intercal \Sigma^{-1} (\mathbf{x} - \mathbf{y})},
+$$
+where $\mathbf{x}, \mathbf{y}$ correspond to the mean activity vectors for each group, taken with respect to each site. The pooled covariance matrix is the same as used in Hotelling's two-sample statistic, derived as
+$$
+\Sigma = 
+\frac{(n_x - 1) \Sigma_x + (n_y - 1)\Sigma_y}{n_x + n_y - 2},
+$$
+where $\Sigma_x, \Sigma_y$ are the typical sample covariance matrices for each distribution. `Rfast` contains functions `Rfast::pooled.cov()` and `Rfast::spdinv()` to support these calculations. 
+
+For low trial numbers, the inverse covariance matrix can be found with the regularized/shrinkage estimator from `corpcor::invcov.shrink()`. Though I did not find a meaningful difference between the ordinary and shrinkage estimator for the between-family comparison, there are fewer trials for the randomized dichotomies and it may be worth performing the comparison again. 
+
+### Randomized dichotomies
+
+Due to the low number of repetitions for each image (6 repetitions for each unique image), it may be unstable to perform one-vs-one or one-vs-all comparisons of specific sample instances. Instead, two groups of 7 sample IDs each (without replacement) will be selected. Because this is not an even split of the available sample IDs, the procedure will proceed as follows: 
+
+1. Omit one of the 15 IDs (1, 2, ..., 15)
+2. Take a random sample of the possible $\binom{14}{7}$ combos of the remaining indices. 
+
+Given the above file of randomized dichotomies, the Mahalanobis distance calculation proceeds similarly to `20260715.qmd`, with minor modifications to how the groups are determined. 
+
+```{r, eval = F}
+rdichot <- function(G, N) {
+  # number in each group
+  k <- G %/% 2
+  omit <- G %% 2
+  
+  # checks
+  n <- choose(G - omit, k)
+  grp_lim <- ifelse(omit, n * G, n)
+  if (n > 10000) 
+    stop(sprintf("%d. possible dichotomies exceeds 10000.", n))
+  if (N > grp_lim) 
+    stop(sprintf("N = %d. > possible dichotomies (%d.)", N, grp_lim))
+  
+  perms <- combn(G - omit, k)
+  
+  if (omit) {
+    n_omit <- cut(1:N, G, label = F) %>% table()
+    sapply(1:G, 
+      function(x) {
+        perms_ <- perms[, sample(1:ncol(perms), n_omit[x], replace = F)]
+        apply(perms_, MARGIN = 2, rdichot_helper, G = G, omit_idx = x)}) %>%
+      do.call(cbind, .)
+  } else {
+    apply(
+      perms[, sample(1:ncol(perms), N, replace = F)], 
+      MARGIN = 2, rdich_helper, G = G)}
+}
+
+rdichot_helper <- function(G, incl_idx, omit_idx = NULL, return_mat = T) {
+  if (return_mat) {
+    res <- rep(-1, G)
+    res[incl_idx] <- 1
+    res[omit_idx] <- 0
+    return(matrix(res, nrow = 1))
+  }
+  
+  grps <- if (is.null(omit_idx)) 1:G else (1:G)[-omit_idx]
+  res <- split(grps, f = 1:length(grps) %in% incl_idx)
+  names(res) <- NULL
+  return(res)
+}
+
+set.seed(nb_id)
+n_samples <- 15
+n_dichotomies <- 2000
+
+dichotomies <- t(rdichot(n_samples, n_dichotomies))
+colnames(dichotomies) <- paste0("id", sprintf("%02d", 1:15))
+write.csv(dichotomies, here(out_dir, "dichotomies.csv"), row.names = F)
+```
+
+## Pairwise distances between samples
+
+With only six samples, the inverse covariance matrix needs to be found with a shrinkage estimator, such as the one provided by `corpcor::invcov.shrink()`, which implements the Ledoit-Wolf shrinkage estimator. When the distances are aggregated over families, the pairwise distances tend to be largest for V2, a trend that seems to be consistent when the values are separated by families (@fig-pairwise_dM). This is somewhat inconsistent with Ziemba et al.'s results, which found that samples were better separated in V1. 
+
+```{r, eval = F}
+library(cli)
+library(corpcor)
+
+families <- stimuli$family %>% unique()
+n_sites <- 40
+
+pairwise_multi_d <- function(muas, shrink = T, return_diff = T) {
+  sample_pairs <- combn(15, 2)
+  lapply(
+    regions, 
+    function (region) {
+      mua <- muas[[region]]
+      sites <- sample(1:ncol(mua), n_sites)
+      mua <- mua[, sites]
+      cli_progress_bar(region, total = length(families) * ncol(sample_pairs))
+      
+      fam_list <- list()
+      for (family in families) {
+        fam_id <- sprintf("%03d", family)
+        dM <- rep(0, ncol(sample_pairs))
+        
+        for (i in 1:ncol(sample_pairs)) {
+          sample_pair <- sample_pairs[, i]
+          idx <- (stimuli$family == family) & (stimuli$id %in% sample_pair)
+          dM[i] <- multi_d(
+            mua[idx, ], 
+            stimuli$id[idx], shrink = T, 
+            return_diff = F)
+          cli_progress_update()}
+        
+        fam_list[[fam_id]] <- data.frame(family = family, dM = dM) }
+      
+        do.call(rbind, fam_list) %>%
+          mutate(region = region)
+    }) %>%
+    do.call(rbind, .)
+}
+
+multi_d <- function(dat, grps, shrink = F, return_diff = T) {
+  grps <- as.numeric(as.factor(grps))
+  mu_1 <- colMeans(dat[grps == 1, ])
+  mu_2 <- colMeans(dat[grps == 2, ])
+  mu_diff <- mu_2 - mu_1
+
+  if (shrink) {
+    inv_cov <- rbind(
+      sweep(dat[grps == 1, ], 2, mu_1, FUN = "-"),
+      sweep(dat[grps == 2, ], 2, mu_2, FUN = "-")) %>%
+      invcov.shrink(verbose = F)
+  } else {
+    inv_cov <- spdinv(pooled.cov(dat, ina = grps)) }
+  multi_d <- sqrt(t(mu_diff) %*% inv_cov %*% (mu_diff))
+
+  if (return_diff) {
+    return(list(multi_d = multi_d, mu_diff = mu_diff, combvar = diag(inv_cov)))
+  } else {
+    return(multi_d)
+  }
+}
+
+pairwise_dM <- pairwise_multi_d(avgs, shrink = T)
+write.csv(pairwise_dM, here(out_dir, "pairwise_dM.csv"), row.names = F)
+```
+
+```{r}
+#| label: fig-pairwise_dM
+#| fig-cap: "Histogram of Mahalanobis distances for each pairwise sample comparison, either aggregated across all families (top) or separated by family (bottom) and with fill color based on region. Vertical lines indicate medians. Note that pairwise distances must be found with the shrinkage estimator."
+#| fig-width: 5.5
+#| fig-height: 6.5
+library(patchwork)
+library(grid)
+
+pairwise_dM <- read.csv(here(out_dir, "pairwise_dM.csv"))
+dM_summary_1 <- pairwise_dM %>% 
+  group_by(region) %>% 
+  summarize(dM = median(dM)) %>%
+  mutate(region = factor(region, levels = regions))
+dM_summary_2 <- pairwise_dM %>% 
+  group_by(region, family) %>% 
+  summarize(dM = median(dM), .groups = "drop_last") %>% 
+  mutate(family = as.factor(family), region = factor(region, levels = regions))
+
+p1 <- pairwise_dM %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(x = dM, fill = region)) +
+    geom_histogram(bins = 20, position = "identity", alpha = 0.3) +
+    geom_vline(data = dM_summary_1, aes(xintercept = dM, color = region)) + 
+    labs(
+      y = NULL, 
+      x = NULL,
+      # title = "Distances aggregated by region", 
+      fill = "Region", 
+      color = "Region") +
+    theme(
+      legend.position = "top",
+      axis.text = element_blank(),
+      panel.grid = element_blank(),
+      panel.spacing = unit(0, "lines"),
+      strip.text = element_blank())
+
+p2 <- pairwise_dM %>%
+  mutate(family = as.factor(family), region = factor(region, levels = regions)) %>%
+  ggplot(aes(x = dM, fill = region)) +
+    geom_histogram(bins = 20, position = "identity", alpha = 0.4) +
+    geom_vline(data = dM_summary_2, aes(xintercept = dM, color = region)) + 
+    facet_wrap(vars(family), scales = "fixed") +
+    labs(
+      # title = "Separated by family",
+      y = NULL, 
+      x = "Mahalanobis distance") +
+    theme(
+      legend.position = "none",
+      axis.text = element_blank(),
+      panel.grid = element_blank(),
+      panel.spacing = unit(0, "lines"),
+      strip.text = element_blank())
+p1 / p2 + plot_layout(heights = c(1, 3))
+```
+
+### Randomized dichotomy results
+
+For convenience, since each of the randomized dichotomies needs to be done within a family (of which there are 35), the initial results will be saved in the Stats server.The initial results can be aggregated, without further analysis of the within-family differences. I ran the aggregation in the cluster and transferred the end result; see `scripts/rd_multi_d_agg.R`. 
+
+```{r}
+rd_infam <- here(res_dir, "rd_infam.csv") %>%
+  read.csv() %>%
+  mutate(shrink = as.character(as.integer(shrink))) %>%
+  mutate(shrink = replace_values(shrink, "1" ~ "Shrinkage", "0" ~ "Ordinary"))
+rd_summary <- rd_infam %>%
+  group_by(region, shrink, n_sites) %>%
+  summarize(across(c("multi_d"), median), .groups = "drop_last")
+```
+
+The randomized dichotomy results, in order of increasing median distance, tends to follow V1 < IT < V4 < V2, which is not consistent with the previous results in Ziemba et al. (2016). With the shrinkage estimator, the distribution of the distances tends to be more concentrated around the median with less extreme maximum distance values. Both the ordinary and shrinkage estimators are right-skewed (@fig-mahalanobis_shrinkage). The shrinkage estimator is probably more stable given the number of repetitions. When assuming shrinkage, the number of sites used does not change the overall pattern of the distances, but more sites tends to increase the range of calculated distance values (@fig-mahalanobis_sites). This does not change with the ordinary (non-shrinkage) estimator (not shown).
+
+```{r}
+#| label: fig-mahalanobis_shrinkage
+#| fig-cap: "Histogram of Mahalanobis distances with the ordinary covariance estimate (left) or the shrinkage estimator (right) with samples of 30 sites."
+#| fig-width: 3
+#| fig-height: 2.5
+
+rd_infam %>% 
+  filter(n_sites == 30) %>%
+  ggplot(aes(x = multi_d)) + 
+    geom_histogram(bins = 20, fill = palette.colors()[3]) + 
+    facet_grid(rows = vars(region), cols = vars(shrink), scales = "free_x") + 
+    labs(y = NULL, x = "Mahalanobis distance") + 
+    geom_vline(data = rd_summary %>% filter(n_sites == 30), aes(xintercept = multi_d), linetype = "dashed") + 
+    theme(axis.text.y = element_blank(), panel.grid.minor = element_blank())
+```
+
+```{r}
+#| label: fig-mahalanobis_sites
+#| fig-cap: "Histogram of Mahalanobis distances with different numbers of sampled sites. Results are taken from the shrinkage inverse covariance estimator."
+#| fig-width: 4.5
+#| fig-height: 2.5
+rd_infam %>% 
+  filter(shrink == "Shrinkage") %>%
+  ggplot(aes(x = multi_d)) + 
+    geom_histogram(bins = 20, fill = palette.colors()[2]) + 
+    facet_grid(rows = vars(region), cols = vars(n_sites), scales = "free_x") + 
+    labs(y = NULL, x = "Mahalanobis distance") + 
+    geom_vline(
+      data = rd_summary %>% filter(shrink == "Shrinkage"), 
+      aes(xintercept = multi_d), linetype = "dashed") + 
+    theme(axis.text.y = element_blank(), panel.grid.minor = element_blank())
+```

@@ -1,0 +1,297 @@
+---
+title: "(Report) Image statistic encoding between regions of the visual cortex"
+author: \small Al Xin
+date: last-modified
+date-format: MMM D, YYYY
+bibliography: ../refs.bib
+csl: ../nlm.csl
+execute:
+  echo: false
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 11pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    link-citations: true
+    include-in-header:
+      text: |
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r, message = FALSE, warning = FALSE}
+nb_id <- "20260812"
+here::i_am(paste0("reports/", nb_id, "/", nb_id, ".qmd"))
+
+library(here)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gt)
+
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+
+# ggplot settings
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Introduction
+
+### Motivation
+
+Later stages of the visual cortex are thought to contain neurons selective for progressively higher-level visual features. One approach to characterize the relevant visual features for each layer is through characterizing responses to visual textures with known image statistics. Visual textures can be loosely described as approximately homogeneous images with repeating but randomized elements, e.g., images of sand, tree bark, granite, or honeycomb. Here, image statistics refer to $N$th-order empirical densities of pixels. First order statistics include, for example, luminance correlations at a given distance. 
+
+Portilla and Simoncelli (2000) [@portilla_parametric_2000] developed a parametric texture model that, given a seed image of a visual texture, generates new samples matched to the original's image statistics. The parametric model can be adjusted to include higher-order statistics, which Portilla and Simoncelli describe as V1-like. Matching V1-like correlations produces more coherent *naturalistic* structure. Example noisy (no V1-like statistic matching) and naturalistic images can be seen in @fig-textures. Freeman et al. (2013) found that this distinction may be relevant for functionally characterizing V2, finding that V2 neurons tend to be more selective for naturalistic textures [@freeman_functional_2013]. 
+
+![(A) Examples of samples generated with varying levels of naturalistic structure. (B) Families of samples generated from different seed images.](../img/lee2024-fig01.jpg){#fig-textures width=90%}
+
+My ADA will focus on further characterizing how image statistics may be represented/transformed in V1, V2, V4, and IT, using data collected by Lee et al. (2024) [@lee_developmentally_2024]. V4 and IT are not usually recorded for visual texture stimuli. Each family contains samples that are matched to the same statistics, but each sample is unique at a pixel level. Thus, if higher layers are selective for certain higher level aggregated image statistics, we expect that they will lose selectivity for the differences between samples. 
+
+### Data
+
+I sourced data from Gerick Lee et al. (2024), who collected longitudinal and inter-region neural responses to visual texture stimuli (available on [Zenodo](https://zenodo.org/records/10888270)) [@lee_developmentally_2024]. Lee et al. recorded from 6 macaques with two arrays each, targeting V1, V2, V4, and IT. Lee et al. reported the multi-unit activations; the spiking/raw timing data are not available. Lee et al. generated 15 samples of noisy and naturalistic images from 35 families ($15 \times 35 \times 2$ unique images), where each family corresponded to a different original seed image. The parameters fed into the PS model are lost, but the images presented to the monkeys may be available.
+
+### Expected results
+
+We expect to find better between-group discrimination in V2 and V4 better within-group discrimination in V1, i.e., more separation between unique samples with the same visual statistics. That is, later visual regions better encode relevant group-level visual statistics at the cost of distinctively encoding individual instances of textures with the same statistics (see @fig-intro). This effect is likely only visible in population level metrics or decoding strategies considering the relative size of the receptive fields. Previously, Ziemba et al. (2016) performed a similar analysis on recordings from V1 and V2 [@ziemba_selectivity_2016]. With nested ANOVA, Ziemba et al. found larger between-family variance in V1 but smaller within-family contribution to variance. Ziemba et al. (2016) also found better performance of a Poisson decoder on classifying samples in V1 (and families in V2). Furthermore, for IT, it is possible that both between-family and within-family distance decreases as IT may not be sensitive to the image statistics that distinguish the textures, a pattern found in Gerick Lee's previous analysis (@fig-areadne2024).
+
+![(Top) A visual representation of two families in some arbitrary 2D representation space. (Bottom) The distances between families and between samples, with some arbitrary values for each region.](../img/proposed_results.png){#fig-intro width=60%}
+
+![Histograms of pairwise comparisons, for naturalistic-naturalistic comparisons (colored bars), and noise-noise comparisons (gray). Lines depict medians. The figure was originally vertical but I rearranged it, so the axes are consistent for all quadrants.](../../reports/img/lee2024-poster-1.png){#fig-areadne2024 width=40%}
+
+### Notes
+
+- Consecutive question marks (??) tag areas to follow up on.
+- Though the Lee et al. paper and related literature describes textures without V1-like correlations as "noise", I often use the term "noisy".
+- For multivariate distance, I use Mahalanobis distance, indicated as $d_M$
+- The published data only includes multi-unit activations (MUAs) for each recording site. 
+- @sec-data mostly copies information from the previous report.
+
+## Analysis plan
+
+To determine the between-family or between-sample separation within regions, I will find the distribution of multivariate distance values between pairwise comparisons. This approach will allow for visualization of the median/mean pairwise distribution and the skew of the distances.
+
+A multivariate distance value can be calculated with the typical Mahalanobis distance formula, i.e., 
+$$
+d_M (\mathbf{x}, \mathbf{y}) = \sqrt{(\mathbf{x} - \mathbf{y})^\intercal \Sigma^{-1} (\mathbf{x} - \mathbf{y})},
+$$
+where $\mathbf{x}, \mathbf{y}$ correspond to the mean activity vectors for each group, taken with respect to each site. The pooled covariance matrix is the same as used in Hotelling's two-sample statistic, derived as
+$$
+\Sigma = 
+\frac{(n_x - 1) \Sigma_x + (n_y - 1)\Sigma_y}{n_x + n_y - 2},
+$$
+where $\Sigma_x, \Sigma_y$ are the typical sample covariance matrices for each distribution. `Rfast` contains functions `Rfast::pooled.cov()` and `Rfast::spdinv()` to support these calculations. For low trial numbers, the inverse covariance matrix can be found with the regularized/shrinkage estimator from `corpcor::invcov.shrink()`. 
+
+For between-family calculations, each family contains 90 trials (15 samples by 6 repetitions each). For between-sample distance calculations, each sample only contains 6 repetitions. So, while pairwise between-family calculations are straightforward, the between-sample distances may need to be modified and explored more. 
+
+Jenelle proposed a randomized dichotomy procedure. Two groups of 7 sample IDs each (without replacement) will be selected. Because this is not an even split of the available sample IDs, the procedure will proceed as follows: 
+
+1. Omit one of the 15 IDs (1, 2, ..., 15)
+2. Take a random sample of the possible $\binom{14}{7}$ combos of the remaining indices.
+3. Find $d_M$ between the two groups of seven samples (so 42 trials) each. 
+4. Repeat the above for each of the 15 IDs.
+
+Alternatively, we could still perform pairwise between-sample calculations (with the regularized/shrinkage estimator) and discuss trends visible within families.
+
+## Data {#sec-data}
+
+Monkeys were presented with textures generated from the PS parametric texture model [@portilla_parametric_2000], with unique images created from 2 levels of coherence (noisy/naturalistic), 35 families (seed images), and 15 randomly generated samples from each family. This produces 1050 unique images ($35 \times 2 \times 15$). There are six repetitions of each image per session. 
+
+Lee et al. recorded from 6 monkeys, each implanted with two 96-site Utah arrays. Within a session, there were 6 repetitions of each of the $35 \times 15 \times 2 = 1050$ unique images, presented in blocks of 8 images (100 ms on, 100 ms off). The provided files aggregate recordings by region, with the number of sites per region in @tbl-sites. For each of V1, V2, V4, and IT, there is at least one 96-electrode Utah array. The published per-session data reflects simultaneously recorded sites. 
+
+On M1, one array sat on the border between V1 and V2. For M3, the authors could not reliably determine the location and labeled the region as the foveal confluence (FC) of V1, V2 and V4, which I removed from my analyses. Lee et al. implanted IT arrays twice in M6, with the recording at 221 weeks taken from the second implantation. 
+
+| Region | Array 1 | Array 2 | Array 3 | Array 4 | Total |
+|----|----|----|----|----|----|
+| V1 | 61 (M1) | 96 (M6) |         |         | 157 |
+| V2 | 35 (M1) | 96 (M2) |         |         | 131 |
+| V4 | 96 (M1) | 96 (M2) | 96 (M8) |         | 288 |
+| IT | 96 (M3) | 96 (M6) | 96 (M6) | 96 (M7) | 384 |
+
+: The array number is arbitrary. Monkey ID is in parentheses. {#tbl-sites font-size=80%}
+
+### Behavioral discrimination between noisy and naturalistic textures
+
+In addition to passive fixation recordings, Lee et al. also measured behavioral sensitivities with a four-choice oddity task. Monkeys were shown 3 noisy distractors and 1 naturalistic target, with all four images produced from the same family. The noisy distractors were unique samples, i.e., not replicates of the same noisy image. The strength of naturalistic structure in the target could be modified from 0 (statistically matched to noisy texture) to 1 (fully matches the naturalistic structure statistics of the seed image). Of the 35 texture families presented in passive fixation recordings, samples from only five families were used in the behavioral task. The family IDs in the behavioral task are included in the public MATLAB code. M8 only underwent passive fixation recording and did not perform the four-choice oddity task. M1, M2, and M3 performed the behavioral task prior to recording while M6 and M7 performed the task after. 
+
+## Initial results
+
+### Between family comparisons
+
+The trend in the results seem consistent with Gerick's poster (copied in @fig-areadne2024 for reference), with the center of the histogram generally tending toward higher distances with higher visual regions with the trend reversing in IT. Furthermore, while the calculated distances tend to increase with more sub-sampled sites, the overall trend in the distributions of the distance values is consistent (@fig-mahalanobis_sites).
+
+@fig-dM_mu_var contains plots for the difference in means and inverse combined variance (averaged across sites). The term inverse combined variance is used loosely, as it refers to the diagonal of the $\Sigma^{-1}$ in the Mahalanobis distance calculation. The inverse combined variance tends to be lowest in V2, about even in V1 and V4, and highest in IT. The difference in means tends to be about even in V1 and V2 and smaller in V4 and IT. 
+
+(??) This is probably a bad approach to reasoning about the covariances between the MUAs, since it would be easier to think about the original un-inverted $\Sigma$. 
+
+The greater $d_M$ in V2 compared to V1 is not driven by the difference in mean firing, as the V2 mean differences are smaller. Furthermore, because the diagonal elements of $\Sigma^{-1}$ are smaller in V2 than V1, the overall $d_M$ is probably being affected by larger off-diagonal elements (i.e., smaller covariances between the sites). I discarded these elements, so I need to redo these calculations if I wanted to further investigate. 
+
+Similarly, the greater $d_M$ in V4 compared to V2 is also not driven by the difference in mean firing. The larger inverse combined variance of V4 may account for the difference. That is, V4 firing has less variance than V2. 
+
+The $d_M$ in IT is smaller than V4 despite larger differences in mean firing and larger inverse combined variance. Again, this points to potential further exploration of the off-diagonal elements of $\Sigma^{-1}$. 
+
+Furthermore, the differences in the $\Sigma^{-1}$ diagonal elements suggest that z-scoring the firing averages may be needed. 
+
+```{r}
+#| label: fig-mahalanobis_sites
+#| fig-cap: "Histogram of Mahalanobis distances with different numbers of sampled sites. Results are taken from the ordinary (no shrinkage) covariance estimator."
+#| fig-width: 5
+#| fig-height: 3
+regions <- c("V1", "V2", "V4", "IT")
+dM <- here("results", "20260715", "pf_dM.csv") %>% 
+  read.csv() %>%
+  mutate(region = factor(region, levels = regions))
+dM_summary <- dM %>%
+  group_by(region, shrink, n_sites) %>%
+  summarize(across(c("multi_d"), median), .groups = "drop_last")
+dM %>% 
+  filter(shrink == "Ordinary") %>%
+  ggplot(aes(x = multi_d)) + 
+    geom_histogram(bins = 20, fill = palette.colors()[2]) + 
+    facet_grid(rows = vars(region), cols = vars(n_sites), scales = "fixed") + 
+    labs(y = NULL, x = "Mahalanobis distance") + 
+    geom_vline(
+      data = dM_summary %>% filter(shrink == "Ordinary"), 
+      aes(xintercept = multi_d), linetype = "dashed") + 
+    theme(axis.text.y = element_blank(), panel.grid.minor = element_blank())
+```
+
+```{r}
+#| label: fig-dM_mu_var
+#| fig-cap: "Histogram of the average mean difference and average of the diagonal of the inverse covariance matrix with 40 sites. Trends are similar for 10, 20, and 30 sites (not shown). Results are taken from the ordinary (no shrinkage) covariance estimator."
+#| fig-width: 5
+#| fig-height: 3
+n <- 40
+
+dM_mu_var <- here("results", "20260715", "pf_dM_mu_var.csv") %>% 
+  read.csv() %>%
+  mutate(
+    region = factor(region, levels = regions), 
+    measure = replace_values(measure, 
+      "combvar" ~ "Inverse var.", "mu_diff" ~ "Mean diff."))
+dM_mu_var_summary <- dM_mu_var %>%
+  group_by(region, measure, shrink, n_sites) %>%
+  summarize(across(c("val"), median), .groups = "drop_last")
+dM_mu_var %>% 
+  filter(shrink == "Ordinary", n_sites == n) %>%
+  ggplot(aes(x = val)) + 
+    geom_histogram(bins = 20, fill = palette.colors()[2]) + 
+    facet_grid(rows = vars(region), cols = vars(measure), scales = "free") + 
+    labs(y = NULL, x = NULL) + 
+    geom_vline(
+      data = dM_mu_var_summary %>% filter(shrink == "Ordinary", n_sites == n), 
+      aes(xintercept = val), linetype = "dashed") + 
+    theme(axis.text.y = element_blank(), panel.grid.minor = element_blank())
+```
+
+
+### Between sample comparisons
+
+With only six samples, the inverse covariance matrix needs to be found with a shrinkage estimator, such as the one provided by `corpcor::invcov.shrink()`, which implements the Ledoit-Wolf shrinkage estimator. When the distances are aggregated over families, the pairwise distances tend to be largest for V2, a trend that seems to be consistent when the values are separated by families (@fig-pairwise_dM). This is somewhat inconsistent with Ziemba et al.'s results, which found that samples were better separated in V1. 
+
+```{r}
+#| label: fig-pairwise_dM
+#| fig-cap: "Histogram of Mahalanobis distances for each pairwise sample comparison, either aggregated across all families (top) or separated by family (bottom) and with fill color based on region. Vertical lines indicate medians. Note that pairwise distances must be found with the shrinkage estimator."
+#| fig-width: 5.5
+#| fig-height: 6.5
+library(patchwork)
+library(grid)
+
+pairwise_dM <- read.csv(here("data", "processed", "20260723", "pairwise_dM.csv"))
+regions <- c("V1", "V2", "V4", "IT")
+dM_summary_1 <- pairwise_dM %>% 
+  group_by(region) %>% 
+  summarize(dM = median(dM)) %>%
+  mutate(region = factor(region, levels = regions))
+dM_summary_2 <- pairwise_dM %>% 
+  group_by(region, family) %>% 
+  summarize(dM = median(dM), .groups = "drop_last") %>% 
+  mutate(family = as.factor(family), region = factor(region, levels = regions))
+
+p1 <- pairwise_dM %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(x = dM, fill = region)) +
+    geom_histogram(bins = 20, position = "identity", alpha = 0.3) +
+    geom_vline(data = dM_summary_1, aes(xintercept = dM, color = region)) + 
+    labs(
+      y = NULL, 
+      x = NULL,
+      # title = "Distances aggregated by region", 
+      fill = "Region", 
+      color = "Region") +
+    theme(
+      legend.position = "top",
+      axis.text = element_blank(),
+      panel.grid = element_blank(),
+      panel.spacing = unit(0, "lines"),
+      strip.text = element_blank())
+
+p2 <- pairwise_dM %>%
+  mutate(family = as.factor(family), region = factor(region, levels = regions)) %>%
+  ggplot(aes(x = dM, fill = region)) +
+    geom_histogram(bins = 20, position = "identity", alpha = 0.4) +
+    geom_vline(data = dM_summary_2, aes(xintercept = dM, color = region)) + 
+    facet_wrap(vars(family), scales = "fixed") +
+    labs(
+      # title = "Separated by family",
+      y = NULL, 
+      x = "Mahalanobis distance") +
+    theme(
+      legend.position = "none",
+      axis.text = element_blank(),
+      panel.grid = element_blank(),
+      panel.spacing = unit(0, "lines"),
+      strip.text = element_blank())
+p1 / p2 + plot_layout(heights = c(1, 3))
+```
+
+The randomized dichotomy results, in order of increasing median distance, tends to follow V1 < IT < V4 < V2, which is also not consistent with the previous results in Ziemba et al. (2016). Results will be reported with the shrinkage estimator. The number of sites used does not change the overall pattern of the distances, but more sites tends to increase the range of calculated distance values (@fig-dM_infam). This does not change with the ordinary (non-shrinkage) estimator (not shown). I have not yet analyzed the difference in means and $\Sigma^{-1}$ for the randomized dichotomies.
+
+```{r}
+#| label: fig-dM_infam
+#| fig-cap: "Histogram of Mahalanobis distances with different numbers of sampled sites. Results are taken from the shrinkage inverse covariance estimator."
+#| fig-width: 4.5
+#| fig-height: 2.5
+
+rd_infam <- here("results", "20260723", "rd_infam.csv") %>%
+  read.csv() %>%
+  mutate(
+    shrink = as.character(as.integer(shrink)), 
+    region = factor(region, levels = regions)) %>%
+  mutate(shrink = replace_values(shrink, "1" ~ "Shrinkage", "0" ~ "Ordinary"))
+rd_summary <- rd_infam %>%
+  group_by(region, shrink, n_sites) %>%
+  summarize(across(c("multi_d"), median), .groups = "drop_last")
+
+rd_infam %>% 
+  filter(shrink == "Shrinkage") %>%
+  ggplot(aes(x = multi_d)) + 
+    geom_histogram(bins = 20, fill = palette.colors()[2]) + 
+    facet_grid(rows = vars(region), cols = vars(n_sites), scales = "free_x") + 
+    labs(y = NULL, x = "Mahalanobis distance") + 
+    geom_vline(
+      data = rd_summary %>% filter(shrink == "Shrinkage"), 
+      aes(xintercept = multi_d), linetype = "dashed") + 
+    theme(axis.text.y = element_blank(), panel.grid.minor = element_blank())
+```
+
+## Next steps
+
+I want to check if z-scoring MUAs affects the trends seen in the between-family and between-sample comparisons. Then, I want to change my exploratory procedure to save the entire $\Sigma^{-1}$ matrix and check the covariance between sites within each region. Mostly, I do not have a good intuition for how potential sparsity in V4 and IT may affect the comparisons, especially if sparsity is not universal. E.g., for each between-family comparison, the activity of a few sites separates the families well, but the sites may differ depending on the families being compared. I am not sure z-scoring will help with this exact question, though inconsistency between the current analyses and the z-scored analyses will probably indicate some interesting feature of the covariance between sites. 
+
+The between-sample (within-family) results being inconsistent with Ziemba et al. needs to be explained. Ziemba et al. drew their conclusions with multi-level ANOVA (decomposing variance into a between-family, between-sample, and between-repetition component) and Poisson regression. Possibly, if there is overall higher variance in V2 firing, the scaling of the $d_M$ comparisons may not "normalized" compared to ANOVA. However, it is unclear to me why $d_M$ would differ from Poisson regression results. 
+
+Furthermore, it might be prudent to consider holding out arrays from V4 and IT. It is likely not possible for V1 and V2, though future analyses may be performed on the Ziemba et al. data. 
+
+## References
+
+::: {#refs}
+:::
+
+  
