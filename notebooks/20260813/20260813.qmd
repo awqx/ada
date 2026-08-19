@@ -1,0 +1,418 @@
+---
+title: "Detection of sparsity in neural responses"
+date: last-modified
+author: \small Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260813"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(ggplot2)
+library(qs2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+t2_dir <- here("data", "raw", "6reps") 
+data_dir <- here("data", "processed", "20260625")
+regions <- c("V1", "V2", "V4", "IT")
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Motivation
+
+Very few investigators record visual texture responses from IT due to the lack of a strong, coherent response. *A priori*, we should expect a sparse response in IT. There are a few ways that sparseness may appear in IT:  
+
+1. There are a few IT neurons whose responses to the texture families tend to be strong and reliable. 
+2. For each texture family, there are a few neurons whose response is reliable, but the responsive neurons for each family may differ.
+3. For some texture families, there are a few neurons whose response is reliable. 
+4. Same as (3), but for each specific image (sample ID). 
+5. Same as (3), but for each specific image.
+
+Because reliable sites are identified by correlation to the same stimuli, it is possible to consistently miss patterns of sparsity outside of (1). In this new analysis, I want to visualize the reliability of neurons in a way that is not dependent on the previous criteria for reliable site. Furthermore, I want to compare this approach across all regions recorded. Since scenario (5) is most general, we want to focus on approaches to characterize the neural response that would work in this situation. 
+
+## Plan
+
+The most basic analysis is to perform a two sample t-test for each neuron's response for a specific image compared to the response to blank images. Since there are 6 repetitions, the results are likely a bit unstable. It may help to also perform the t-test after pooling over the family, though this may not capture some of the sparsity that may be present. 
+
+## Data
+
+See `20260625.qmd` for reference for how data were processed. Note that the window of averaged responses depends on the criteria for reliability. For now, I will proceed with the already calculated average, but note this potential source of bias, especially for IT which does not have many reliable sites. 
+
+Unlike the previous notebooks, analysis will be *not* be limited to reliable sites. For now, we will still only consider images with naturalistic structure compared to blank images.
+
+## Methods
+
+### Two-sample t-test
+
+To compare the mean firing between blank and non-blank images, Welch's *t*-test will be used. The statistic *t* is found as 
+$$
+t = \frac
+{ \overline{X}_1 - \overline{X}_2 }
+{ \sqrt{s^2_{\overline{X}_1} + s^2_{\overline{X}_2}} }, 
+\quad 
+s_{\overline{X}_i} = \frac{s_i}{\sqrt{n_i}}
+$$
+where $\overline{X}_i$ is the sample mean, and $s_{\overline{X}_i}$ is the standard error, $s_i$ is the sample standard deviation, and $n_i$ is the sample size. The *t*-distribution's degrees of freedom can be approximated as
+$$
+\nu \approx \frac
+{ \left( s^2_{\overline{X}_1} + s^2_{\overline{X}_2} \right)^2 }
+{ \frac{s^4_{\overline{X}_1}}{n_1 - 1} + \frac{s^4_{\overline{X}_2}}{n_2 - 1} }.
+$$
+For simplicity, this will be implemented by `t.test()`. 
+
+## Results
+
+### Blank image baseline response
+
+I pooled the blank image response and the standard deviation over all 600 repetitions of blank images. The blank images are labeled by ID (1 to 100) and repetitions (1 to 6), though I believe this is arbitrary. Density plots of the mean blank responses and the standard error of blank responses for each site and region are displayed in @fig-blanks. V1 responses tend to exhibit lower standard deviations and lower mean firing rate, but the differences between V2, V4, and IT are less noticeable. V2 seems to have more variable mean firing in response to blank images.
+
+```{r}
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+blank_idx <- stimuli$coherence == 0
+
+mua_blank <- lapply(regions, function(x) avgs[[x]][blank_idx, ])
+names(mua_blank) <- regions
+
+blank_mu <- lapply(regions, 
+  function(x) apply(mua_blank[[x]], MARGIN = 2, mean))
+blank_sd <- lapply(regions, 
+  function(x) apply(mua_blank[[x]], MARGIN = 2, sd))
+names(blank_mu) <- regions
+names(blank_sd) <- regions
+```
+
+```{r}
+#| label: fig-blanks
+#| fig-cap: "Histogram of the mean response to blank images and SE of response to blank images for each region. The number of observations differs for each region, so the y-axis has been rescaled to the same maximum across subplots. Dashed lines indicate the median. V1 shows lower mean firing rates and standard deviations."
+#| fig-width: 4
+#| fig-height: 3.5
+
+blank_helper <- function(blank, nm = "mu") {
+  lapply(regions, 
+    function(x) data.frame(
+      val = blank[[x]], 
+      site = 1:length(blank[[x]]),
+      nm = nm, 
+      region = x)) %>%
+    do.call(rbind, .)}
+
+blank_df <- rbind(
+  blank_helper(blank_mu, "Mean"), 
+  blank_helper(blank_sd, "Std. dev.")) %>%
+  mutate(region = factor(region, levels = regions), val = val * 100)
+blank_summary <- blank_df %>%
+  group_by(region, nm) %>%
+  summarize(across(c("val"), median), .groups = "drop_last")
+
+ggplot(blank_df, aes(x = val)) + 
+  geom_histogram(aes(y = ..ncount..), bins = 20, fill = palette.colors()[4]) + 
+  facet_grid(cols = vars(nm), rows = vars(region), scales = "free_x") + 
+  labs(y = "Density", x = "Impulses per second") + 
+  theme(axis.text.y = element_blank()) +
+  geom_vline(data = blank_summary, aes(xintercept = val), linetype = "dashed")
+```
+
+### Qualitative per-site responses to images
+
+```{r}
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+natur_idx <- stimuli$coherence == 2
+
+avgs <- lapply(regions, 
+  function(x) avgs[[x]][natur_idx, ])
+names(avgs) <- regions
+
+stimuli <- stimuli[natur_idx, ] 
+```
+
+```{r}
+summarize_firing <- function(mua, grp) {
+  lapply(1:ncol(mua), 
+    function(site) {
+      data.frame(val = mua[, site], grp = grp) %>%
+        group_by(grp) %>%
+        summarize(mu = mean(val), sd = sd(val)) %>%
+        mutate(site = site)
+    }) %>%
+    do.call(rbind, .)
+}
+```
+
+#### Distribution when pooled over non-blank images
+
+The per-site mean and standard deviations for firings for all non-blank images can be seen in @fig-sites, with rescaled histograms at the bottom of the figure. The means are reported as the difference with the blank images. The difference in means for IT tends to be lower, with more concentration around zero. The high differences in means for V2 and V4 are consistent with existing literature on naturalistic texture responses.  
+
+```{r}
+#| label: fig-sites
+#| fig-cap: "(Top) Difference in mean response and standard deviations of responses to pooled non-blank images for each region and site. (Bottom) Summary of above information in histogram with dashed lines indicating the median. IT shows lower and less variable differences in mean firing rate and lower standard deviations."
+#| fig-width: 5
+#| fig-height: 5
+
+library(patchwork)
+
+blank_wide <- rbind(
+  blank_helper(blank_mu, "mu_blank"), 
+  blank_helper(blank_sd, "sd_blank")) %>%
+  pivot_wider(names_from = nm, values_from = val)
+
+site_firing <- lapply(regions, 
+  function(region) summarize_firing(avgs[[region]], 0) %>%
+    mutate(region = region)) %>%
+  do.call(rbind, .) %>% 
+  select(-grp) %>%
+  left_join(blank_wide, by = c("site", "region")) %>%
+  mutate(mu_diff = mu - mu_blank, .before = sd) %>%
+  select(-mu_blank, -sd_blank) %>%
+  pivot_longer(mu:sd, names_to = "nm", values_to = "val") %>%
+  mutate(val = val * 100) %>%
+  filter(nm != "mu") %>%
+  mutate(nm = replace_values(nm, 
+    "mu_diff" ~ "Diff. in means", 
+    "sd" ~ "Std. dev.")) 
+
+p_sites_1 <- site_firing %>%
+  mutate(region = factor(region, levels = rev(regions))) %>%
+  ggplot(aes(x = site, y = region, fill = val)) + 
+    geom_raster() + 
+    facet_wrap(vars(nm), nrow = 2) + 
+    scale_fill_continuous(palette = "cividis") + 
+    labs(x = "Site", y = NULL, fill = "Hz") + 
+    theme(panel.grid = element_blank())
+
+site_summary <- site_firing %>%
+  group_by(region, nm) %>%
+  summarize(across(c("val"), median), .groups = "drop_last")
+
+p_sites_2 <- site_firing %>%
+  ggplot(aes(x = val)) +
+    geom_histogram(aes(y = ..ncount..), bins = 20, fill = "#31446b") +
+    facet_grid(cols = vars(nm), rows = vars(region), scales = "free_x") +
+    labs(y = "Density", x = "Hz (impulses per second)") +
+    theme(axis.text.y = element_blank()) +
+    geom_vline(data = site_summary, aes(xintercept = val), linetype = "dashed")
+
+p_sites_1 / p_sites_2 + plot_layout(heights = c(1, 2))
+```
+
+
+#### Distribution when pooled over families
+
+In @fig-fam, the heat map of mean differences and standard deviations helps visualize the per-site and per-familyt distribution of firing patterns. Even with this basic visualization, the divisions between each array tend to be clear, with the exception of V2. For instance, in V4, the second array (i.e., the 96 columns in the center of the heat maps) shows markedly lower differences in means and standard errors. 
+
+```{r, eval = F}
+fam_firing <- lapply(regions, 
+  function(region) summarize_firing(avgs[[region]], stimuli$family) %>%
+    mutate(region = region)) %>%
+  do.call(rbind, .) %>% 
+  rename(fam = grp) %>%
+  mutate(fam = factor(fam)) %>%
+  mutate(region = factor(region, levels = regions))
+
+qs_save(fam_firing, here(out_dir, "fam_firing.qs2"))
+```
+
+```{r}
+#| label: fig-fam
+#| fig-cap: "(Top) Difference in mean response and standard deviations of responses to pooled non-blank images for each region and site. (Bottom) Summary of above information in histogram with dashed lines indicating the median. IT shows lower and less variable differences in mean firing rates but a wider distribution of standard deviations."
+#| fig-width: 5
+#| fig-height: 5
+
+library(patchwork)
+
+fam_firing <- qs_read(here(out_dir, "fam_firing.qs2")) %>% 
+  left_join(blank_wide, by = c("site", "region")) %>%
+  mutate(mu_diff = mu - mu_blank, .before = sd) %>%
+  select(-mu_blank, -sd_blank) %>%
+  pivot_longer(mu:sd, names_to = "nm", values_to = "val") %>%
+  mutate(val = val * 100) %>%
+  filter(nm != "mu") %>%
+  mutate(nm = replace_values(nm, 
+    "mu_diff" ~ "Diff. in means", 
+    "sd" ~ "Std. dev.")) %>%
+  mutate(region = factor(region, levels = regions))
+
+p_fam_1 <- fam_firing %>%
+  filter(nm == "Diff. in means") %>%
+  ggplot(aes(x = site, y = fam, fill = val)) + 
+    geom_raster() + 
+    facet_wrap(vars(region)) + 
+    scale_fill_continuous(palette = "viridis") + 
+    labs(x = NULL, y = "Family", fill = "Mean diff. (Hz)") + 
+    theme(
+      panel.grid = element_blank(), 
+      axis.text.x = element_blank(), 
+      axis.text.y = element_blank()) 
+
+p_fam_2 <- fam_firing %>%
+  filter(nm == "Std. dev.") %>%
+  ggplot(aes(x = site, y = fam, fill = val)) + 
+    geom_raster() + 
+    facet_wrap(vars(region)) + 
+    scale_fill_continuous(palette = "magma") + 
+    labs(x = "Site", y = "Family", fill = "SD (Hz)") + 
+    theme(panel.grid = element_blank(), axis.text.y = element_blank())
+
+p_fam_1 / p_fam_2
+```
+
+#### Distribution when pooled over specific image repetitions
+
+Similar to the previous family-wise heat map, @fig-img contains the per-site and per-image firing distributions as the difference in means and the standard deviation. As a heuristic, vertical striping in the heat maps indicates per-site differences and horizontal striping in the heat maps indicates per-image differences. V2 and V4 show more between-site and between-image variation, consistent with previous results on decoding texture families in these regions. 
+
+```{r, eval = F}
+img_grps <- stimuli %>%
+  group_by(family, id) %>%
+  mutate(img_grps = cur_group_id()) %>%
+  .$img_grps
+
+img_firing <- lapply(regions, 
+  function(region) summarize_firing(avgs[[region]], img_grps) %>%
+    mutate(region = region)) %>%
+  do.call(rbind, .) %>% 
+  rename(img = grp) %>%
+  mutate(img = factor(img)) %>%
+  mutate(region = factor(region, levels = regions))
+
+qs_save(img_firing, here(out_dir, "img_firing.qs2"))
+```
+
+```{r}
+#| label: fig-img
+#| fig-cap: "(Top) Heat map of the differences in means between sample images and the blank images for each site. (Bottom) Standard deviations in firing over repetitions of each sample image for each site. V2 and V4 show more between-site and between-image variation in firing patterns."
+#| fig-width: 4.5
+#| fig-height: 8
+library(patchwork)
+
+img_firing <- qs_read(here(out_dir, "img_firing.qs2")) %>%
+  left_join(blank_wide, by = c("site", "region")) %>%
+  mutate(mu_diff = mu - mu_blank, .before = sd) %>%
+  select(-mu_blank, -sd_blank) %>%
+  pivot_longer(mu:sd, names_to = "nm", values_to = "val") %>%
+  mutate(val = val * 100) %>%
+  filter(nm != "mu") %>%
+  mutate(nm = replace_values(nm, 
+    "mu_diff" ~ "Diff. in means", 
+    "sd" ~ "Std. dev.")) %>%
+  mutate(
+    region = factor(region, levels = regions), 
+    nm = factor(nm, levels = c("Diff. in means", "Std. dev.")))
+
+p_img_1 <- img_firing %>%
+  filter(nm == "Diff. in means") %>%
+  ggplot(aes(x = site, y = img, fill = val)) + 
+    geom_raster() + 
+    facet_wrap(vars(region)) + 
+    scale_fill_continuous(palette = "viridis") + 
+    labs(x = NULL, y = "Sample image", fill = "Mean diff. (Hz)") + 
+    theme(
+      panel.grid = element_blank(), 
+      axis.text.x = element_blank(), 
+      axis.text.y = element_blank()) 
+
+p_img_2 <- img_firing %>%
+  filter(nm == "Std. dev.") %>%
+  ggplot(aes(x = site, y = img, fill = val)) + 
+    geom_raster() + 
+    facet_wrap(vars(region)) + 
+    scale_fill_continuous(palette = "magma") + 
+    labs(x = "Site", y = "Sample image", fill = "SD (Hz)") + 
+    theme(panel.grid = element_blank(), axis.text.y = element_blank())
+
+p_img_1 / p_img_2
+```
+
+### Two sample t-test results
+
+The heat map of *t-*-statistics (top) and *p*-values from the *t*-tests in @fig-t_tests displays similar information. Maybe as a result of sparseness, the patterns between arrays in IT seem more consistent than recordings from V1 and V4. 
+
+```{r, eval = F}
+library(cli)
+t_test_params <- expand.grid(region = regions, img_id = unique(img_grps))
+t_tests <- lapply(
+  cli_progress_along(1:nrow(t_test_params)), 
+  function(i) {
+    region <- t_test_params[i, "region"]
+    img_id <- t_test_params[i, "img_id"]
+    mua_img <- avgs[[region]]
+    lapply(1:ncol(mua_img), 
+      function(site) {
+        y_blank <- mua_blank[[region]][, site]
+        x_img   <- mua_img[img_grps == img_id, site]
+        t_res   <- t.test(y = y_blank, x = x_img)
+        data.frame(
+          site = site, 
+          t_stat = t_res$statistic, 
+          p_val = t_res$p.value) }) %>%
+      do.call(rbind, .) %>%
+      mutate(img_id = img_id, region = region) }) %>%
+  do.call(rbind, .)
+qs_save(t_tests, here(out_dir, "t_tests.qs2"))
+```
+
+```{r}
+#| label: fig-t_tests
+#| fig-cap: "(Top) Heat map of the t-statistics calculated for each combination of site and image. The degrees of freedom are identical fir eacg test. The scale has been truncated to (-3, 12). (Bottom) Corresponding p-values, simplified to indicate whether values are below or above a cutoff of 0.01. The graphs are similar to the difference in means plots, though the p-value plot more clearly shows the vertical, per-site firing consistency in V4 and the sparseness in IT."
+#| fig-width: 4.5
+#| fig-height: 8
+t_tests <- qs_read(here(out_dir, "t_tests.qs2"))
+p_val_cutoff <- 0.01
+
+p_tstat <- t_tests %>%
+  ggplot(aes(x = site, y = img_id, fill = t_stat)) + 
+    geom_raster() + 
+    facet_wrap(vars(region)) + 
+    scale_fill_continuous(
+      palette = "mako", 
+      limits = c(-3, 12), 
+      oob = scales::squish) + 
+    labs(x = NULL, y = "Sample image", fill = "Welch's t") + 
+    theme(panel.grid = element_blank(), axis.text.y = element_blank()) 
+
+p_pval <- t_tests %>%
+  mutate(p_cutoff = p_val <= p_val_cutoff) %>%
+  mutate(p_cutoff = ifelse(p_cutoff, "<", ">")) %>%
+  mutate(p_cutoff = paste(p_cutoff, p_val_cutoff)) %>%
+  mutate(p_cutoff = factor(p_cutoff)) %>%
+  ggplot(aes(x = site, y = img_id, fill = p_cutoff)) + 
+    geom_raster() + 
+    facet_wrap(vars(region)) + 
+    labs(x = "Site", y = "Sample image", fill = "p-value") + 
+    scale_fill_discrete(palette = c("#DF536B", "gray96")) + 
+    theme(panel.grid = element_blank(), axis.text.y = element_blank()) 
+
+p_tstat / p_pval
+rm(t_tests)
+```
+
