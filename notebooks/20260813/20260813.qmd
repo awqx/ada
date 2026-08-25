@@ -226,10 +226,14 @@ p_sites_2 <- site_firing %>%
 p_sites_1 / p_sites_2 + plot_layout(heights = c(1, 2))
 ```
 
+```{r}
+qs_save(blank_wide, here(out_dir, "blank_wide.qs2"))
+```
+
 
 #### Distribution when pooled over families
 
-In @fig-fam, the heat map of mean differences and standard deviations helps visualize the per-site and per-familyt distribution of firing patterns. Even with this basic visualization, the divisions between each array tend to be clear, with the exception of V2. For instance, in V4, the second array (i.e., the 96 columns in the center of the heat maps) shows markedly lower differences in means and standard errors. 
+In @fig-fam, the heat map of mean differences and standard deviations helps visualize the per-site and per-family distribution of firing patterns. Even with this basic visualization, the divisions between each array tend to be clear, with the exception of V2. For instance, in V4, the second array (i.e., the 96 columns in the center of the heat maps) shows markedly lower differences in means and standard errors. 
 
 ```{r, eval = F}
 fam_firing <- lapply(regions, 

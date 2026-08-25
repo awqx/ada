@@ -1,0 +1,318 @@
+% Options for packages loaded elsewhere
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
+%
+\documentclass[
+  10pt,
+  letterpaper,
+  DIV=11,
+  numbers=noendperiod]{scrartcl}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{5}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+% Make \paragraph and \subparagraph free-standing
+\makeatletter
+\ifx\paragraph\undefined\else
+  \let\oldparagraph\paragraph
+  \renewcommand{\paragraph}{
+    \@ifstar
+      \xxxParagraphStar
+      \xxxParagraphNoStar
+  }
+  \newcommand{\xxxParagraphStar}[1]{\oldparagraph*{#1}\mbox{}}
+  \newcommand{\xxxParagraphNoStar}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+  \let\oldsubparagraph\subparagraph
+  \renewcommand{\subparagraph}{
+    \@ifstar
+      \xxxSubParagraphStar
+      \xxxSubParagraphNoStar
+  }
+  \newcommand{\xxxSubParagraphStar}[1]{\oldsubparagraph*{#1}\mbox{}}
+  \newcommand{\xxxSubParagraphNoStar}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+\makeatother
+
+
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+
+
+
+
+
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+
+
+ 
+
+
+\usepackage{xcolor, soul}
+\usepackage{bm}
+\definecolor{Light}{gray}{.90}
+\sethlcolor{Light}
+\let\OldTexttt\texttt
+\renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+\usepackage{caption}
+\captionsetup{font=small, labelfont=bf}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1.25ex}
+\newcommand{\bfX}{\mathbf{X}}
+\newcommand{\bfY}{\mathbf{Y}}
+\newcommand{\bfx}{\mathbf{x}}
+\newcommand{\bfy}{\mathbf{y}}
+\DeclareMathOperator{\diag}{diag}
+\KOMAoption{captions}{tableheading}
+\makeatletter
+\@ifpackageloaded{caption}{}{\usepackage{caption}}
+\AtBeginDocument{%
+\ifdefined\contentsname
+  \renewcommand*\contentsname{Table of contents}
+\else
+  \newcommand\contentsname{Table of contents}
+\fi
+\ifdefined\listfigurename
+  \renewcommand*\listfigurename{List of Figures}
+\else
+  \newcommand\listfigurename{List of Figures}
+\fi
+\ifdefined\listtablename
+  \renewcommand*\listtablename{List of Tables}
+\else
+  \newcommand\listtablename{List of Tables}
+\fi
+\ifdefined\figurename
+  \renewcommand*\figurename{Figure}
+\else
+  \newcommand\figurename{Figure}
+\fi
+\ifdefined\tablename
+  \renewcommand*\tablename{Table}
+\else
+  \newcommand\tablename{Table}
+\fi
+}
+\@ifpackageloaded{float}{}{\usepackage{float}}
+\floatstyle{ruled}
+\@ifundefined{c@chapter}{\newfloat{codelisting}{h}{lop}}{\newfloat{codelisting}{h}{lop}[chapter]}
+\floatname{codelisting}{Listing}
+\newcommand*\listoflistings{\listof{codelisting}{List of Listings}}
+\makeatother
+\makeatletter
+\makeatother
+\makeatletter
+\@ifpackageloaded{caption}{}{\usepackage{caption}}
+\@ifpackageloaded{subcaption}{}{\usepackage{subcaption}}
+\makeatother
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Normalization of neural responses},
+  pdfauthor={Al Xin},
+  colorlinks=true,
+  linkcolor={blue},
+  filecolor={Maroon},
+  citecolor={Blue},
+  urlcolor={Blue},
+  pdfcreator={LaTeX via pandoc}}
+
+
+\title{Normalization of neural responses}
+\author{\small Al Xin}
+\date{Aug 20, 2026}
+\begin{document}
+\maketitle
+
+
+\section{Methods}\label{methods}
+
+\subsection{Notation}\label{notation}
+
+Let:
+
+\begin{itemize}
+\tightlist
+\item
+  \(n\): the number of sample stimuli.
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \(n_f\): the number of texture families. Here, assume noisy texture
+    families are omitted, so \(n_f = 35\)
+  \item
+    \(n_s\): the number of samples within each texture family.
+  \item
+    \(n_r\): the number of repetitions of each specific sample.
+  \item
+    \(n_b\): the number of blank stimuli.
+  \end{itemize}
+\item
+  \(k_i\): the number of recording sites for region \(i\).
+
+  \begin{itemize}
+  \tightlist
+  \item
+    If needed, this can also be sectioned by array/simultaneously
+    recorded sites.
+  \end{itemize}
+\item
+  \(t\): the number of 10 ms bins of multi-unit activation (MUA) counts.
+\end{itemize}
+
+The raw MUAs for a given region are contained in a tensor of size
+\(n \times k_i \times t\). For most analyses, we will summarize over
+\(t\) to produce a two-dimensional matrix \(\bfX\). Then, \(X_{i, j}\)
+is a specific element, \(\bfX_{-, i}\) is a \(n \times 1\) column vector
+(the responses of one site to all stimuli), and \(\bfX_{i, -}\) is a
+\(1 \times k_i\) row vector (the responses elicited across all sites by
+one stimulus).
+
+\subsection{Mahalanobis distance}\label{mahalanobis-distance}
+
+Let \(P\) be some probability distributions on \(\mathbb{R}^k\) with
+mean \(\pmb{\mu}\) and covariance matrix \(\pmb\Sigma\). The Mahalanobis
+distance of points \(\bfx, \bfy\) with respect to \(P\) is \[
+d_M (\bfx, \bfy, P) = 
+\sqrt{ ( \bfx - \bfy )^\intercal \pmb\Sigma^{-1} ( \bfx - \bfy ) }.
+\]
+
+If \(\pmb\Sigma\) is positive semi-definite, the covariance can be
+decomposed as \(\pmb\Sigma = \mathbf{S}^\intercal \mathbf{S}\), where
+\(\mathbf{S}\) is the standard deviation matrix. So, the Mahalanobis
+distance is equivalently \[
+d_M (\bfx, \bfy, P) = \| \mathbf{S}^{-1} (\bfx - \bfy) \|, 
+\] or the Euclidean distance after a whitening transformation.
+
+\subsubsection{\texorpdfstring{Usage in Hotelling's two-sample
+\emph{t}-test}{Usage in Hotelling's two-sample t-test}}\label{usage-in-hotellings-two-sample-t-test}
+
+Let \(P \sim \mathcal{N}_k (\pmb\mu, \pmb\Sigma)\), i.e., a
+\(k\)-dimensional multivariate Normal distribution. Then, let
+\(\bfx_1, \bfx_2, \dots, \bfx_{n_x}\) and
+\(\bfy_1, \bfy_2, \dots, \bfy_{n_y}\) be independent samples from \(P\).
+Let each sample be a column vector. We can then define the sample mean
+vectors \[
+\overline{\bfx} = \frac{1}{n_x} \sum_{i = 1}^{n_x} \bfx_i, \quad
+\overline{\bfy} = \frac{1}{n_y} \sum_{i = 1}^{n_y} \bfy_i,
+\] and the sample covariance matrices as \[
+\hat{\pmb\Sigma}_{\bfx} = \frac{1}{n_x - 1} \sum_{i = 1}^{n_x} (\bfx_i - \overline\bfx) (\bfx_i - \overline\bfx)^\intercal, \quad
+\hat{\pmb\Sigma}_{\bfy} = \frac{1}{n_y - 1} \sum_{i = 1}^{n_y} (\bfy_i - \overline\bfy) (\bfy_i - \overline\bfy)^\intercal. 
+\] The unbiased pooled covariance matrix estimate is the weighted
+average \[
+\hat{\pmb\Sigma} = 
+\frac{ (n_x - 1) \hat{\pmb\Sigma}_{\bfx} + (n_y - 1) \hat{\pmb\Sigma}_{\bfy} }
+{ n_x + n_y - 2 },
+\] which is simply
+\(\left( \hat{\pmb\Sigma}_{\bfx} + \hat{\pmb\Sigma}_{\bfy} \right) / 2\)
+when \(n_x = n_y\).
+
+Though not used in our analyses, the resulting Hotelling's two-sample
+\emph{t}-squared statistic has the distribution \[
+t^2 = \frac{n_x n_y}{n_x + n_y} (\overline{\bfx} - \overline{\bfy})^\intercal \hat{\pmb\Sigma}^{-1} (\overline{\bfx} - \overline{\bfy}) \sim T^2 (k, n_x + n_y - 2).
+\]
+
+\subsubsection{Effect of normalization on Mahalanobis distance
+calculations}\label{effect-of-normalization-on-mahalanobis-distance-calculations}
+
+As mentioned previously, the Mahalanobis distance is equivalent to the
+Euclidean distance after whitening with \({\pmb{\Sigma}}^{-1/2}\). Thus,
+any data processing that can be ``undone'' by whitening will not change
+the outcome. For instance, centering and scaling with respect to the
+sites will result in the same value.
+
+Let \(\mathbf{b} \in \mathbb{R}^k\) be some arbitrary constant vector
+and \(\mathbf{m} \in \mathbb{R}^k\) be some non-zero constant vector. If
+we take \[
+\begin{aligned}
+\bfx' &= \begin{bmatrix} m_1 x_1 + b_1 & m_2 x_2 + b_2 & \cdots & m_k x_k + b_k  \end{bmatrix}^\intercal, \\
+\bfy' &= \begin{bmatrix} m_1 y_1 + b_1 & m_2 y_2 + b_2 & \cdots & m_k y_k + b_k  \end{bmatrix}^\intercal,
+\end{aligned}
+\] then transform the assumed covariance matrix of the new distribution
+\(P\) accordingly with \[
+\tilde{\pmb{\Sigma}} = \diag (\mathbf{m}) \pmb\Sigma \diag (\mathbf{m}),
+\] then the term in the Mahalanobis distance simplifies to \[
+\begin{aligned}
+(\bfx' - \bfy')^\intercal \tilde{\pmb\Sigma}^{-1} (\bfx' - \bfy') &= 
+(\bfx - \bfy)^\intercal \diag (\mathbf{m}) \left(  \diag (\mathbf{m}) \pmb\Sigma \diag (\mathbf{m}) \right)^{-1} \diag (\mathbf{m}) (\bfx - \bfy) \\
+&= (\bfx - \bfy)^\intercal \pmb\Sigma^{-1} (\bfx - \bfy).
+\end{aligned}
+\]
+
+Though the sample setting estimates the covariance rather than relying
+on the known \(P\), this invariance to centering and scaling still
+holds. That is,
+
+\[
+\begin{aligned}
+\hat{\pmb\Sigma}_{\bfx'} &= \frac{1}{n_x - 1} \sum_{i = 1}^{n_x} (\bfx_i' - \overline{\bfx}') (\bfx_i' - \overline{\bfx}')^\intercal \\
+&= \frac{1}{n_x - 1} \sum_{i = 1}^{n_x} \diag(\mathbf{m}) (\bfx_i - \overline{\bfx}) (\bfx_i - \overline{\bfx})^\intercal \diag (\mathbf{m}) \\
+\bfx' - \bfy' &= \diag (\mathbf{m}) (\bfx - \bfy)
+\end{aligned}
+\]
+
+The effect of centering and scaling on \(\hat\Sigma\) can still be
+reduced to multiplication by a diagonal matrix.
+
+\subsubsection{Pairwise between-family
+distances}\label{pairwise-between-family-distances}
+
+When calculating the distance between each pair of texture families,
+each sample image and each repetition can be considered a draw from the
+underlying distribution.
+
+
+
+
+\end{document}

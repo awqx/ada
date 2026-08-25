@@ -1,0 +1,217 @@
+---
+title: "Normalization of neural responses"
+date: last-modified
+author: \small Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \usepackage{bm}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+        \newcommand{\bfX}{\mathbf{X}}
+        \newcommand{\bfY}{\mathbf{Y}}
+        \newcommand{\bfx}{\mathbf{x}}
+        \newcommand{\bfy}{\mathbf{y}}
+        \DeclareMathOperator{\diag}{diag}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260820"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(ggplot2)
+library(qs2)
+library(MASS)
+
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+t2_dir <- here("data", "raw", "6reps") 
+data_dir <- here("data", "processed", "20260625")
+regions <- c("V1", "V2", "V4", "IT")
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Methods
+
+### Notation
+
+Let: 
+
+- $n$: the number of sample stimuli.
+  - $n_f$: the number of texture families. Here, assume noisy texture families are omitted, so $n_f = 35$
+  - $n_s$: the number of samples within each texture family. 
+  - $n_r$: the number of repetitions of each specific sample. 
+  - $n_b$: the number of blank stimuli. 
+- $k_i$: the number of recording sites for region $i$.
+  - If needed, this can also be sectioned by array/simultaneously recorded sites. 
+- $t$: the number of 10 ms bins of multi-unit activation (MUA) counts.
+
+The raw MUAs for a given region are contained in a tensor of size $n \times k_i \times t$. For most analyses, we will summarize over $t$ to produce a two-dimensional matrix $\bfX$. Then, $X_{i, j}$ is a specific element, $\bfX_{-, i}$ is a $n \times 1$ column vector (the responses of one site to all stimuli), and $\bfX_{i, -}$ is a $1 \times k_i$ row vector (the responses elicited across all sites by one stimulus). 
+
+### Mahalanobis distance
+
+Let $P$ be some probability distributions on $\mathbb{R}^k$ with mean $\pmb{\mu}$ and covariance matrix $\pmb\Sigma$. The Mahalanobis distance of points $\bfx, \bfy$ with respect to $P$ is
+$$
+d_M (\bfx, \bfy, P) = 
+\sqrt{ ( \bfx - \bfy )^\intercal \pmb\Sigma^{-1} ( \bfx - \bfy ) }.
+$$
+
+If $\pmb\Sigma$ is positive semi-definite, the covariance can be decomposed as $\pmb\Sigma = \mathbf{S}^\intercal \mathbf{S}$, where $\mathbf{S}$ is the standard deviation matrix. So, the Mahalanobis distance is equivalently 
+$$
+d_M (\bfx, \bfy, P) = \| \mathbf{S}^{-1} (\bfx - \bfy) \|, 
+$$
+or the Euclidean distance after a whitening transformation. 
+
+#### Hotelling's two-sample *t*-test
+
+Let $P \sim \mathcal{N}_k (\pmb\mu, \pmb\Sigma)$, i.e., a $k$-dimensional multivariate Normal distribution. Then, let $\bfx_1, \bfx_2, \dots, \bfx_{n_x}$ and $\bfy_1, \bfy_2, \dots, \bfy_{n_y}$ be independent samples from $P$. Let each sample be a column vector. We can then define the sample mean vectors
+$$
+\overline{\bfx} = \frac{1}{n_x} \sum_{i = 1}^{n_x} \bfx_i, \quad
+\overline{\bfy} = \frac{1}{n_y} \sum_{i = 1}^{n_y} \bfy_i,
+$$
+and the sample covariance matrices as
+$$
+\hat{\pmb\Sigma}_{\bfx} = \frac{1}{n_x - 1} \sum_{i = 1}^{n_x} (\bfx_i - \overline\bfx) (\bfx_i - \overline\bfx)^\intercal, \quad
+\hat{\pmb\Sigma}_{\bfy} = \frac{1}{n_y - 1} \sum_{i = 1}^{n_y} (\bfy_i - \overline\bfy) (\bfy_i - \overline\bfy)^\intercal. 
+$$
+The unbiased pooled covariance matrix estimate is the weighted average
+$$
+\hat{\pmb\Sigma} = 
+\frac{ (n_x - 1) \hat{\pmb\Sigma}_{\bfx} + (n_y - 1) \hat{\pmb\Sigma}_{\bfy} }
+{ n_x + n_y - 2 },
+$$
+which is simply $\left( \hat{\pmb\Sigma}_{\bfx} + \hat{\pmb\Sigma}_{\bfy} \right) / 2$ when $n_x = n_y$. 
+
+Though not used in our analyses, the resulting Hotelling's two-sample *t*-squared statistic has the distribution
+$$
+t^2 = \frac{n_x n_y}{n_x + n_y} (\overline{\bfx} - \overline{\bfy})^\intercal \hat{\pmb\Sigma}^{-1} (\overline{\bfx} - \overline{\bfy}) \sim T^2 (k, n_x + n_y - 2).
+$$
+
+For our analyses, we will use the pooled covariance matrix estimate in our sample Mahalanobis distance calculations $\hat{d}_M$.  
+
+#### Effect of normalization on Mahalanobis distance calculations
+
+As mentioned previously, the Mahalanobis distance is equivalent to the Euclidean distance after whitening with ${\pmb{\Sigma}}^{-1/2}$. Thus, any data processing that can be "undone" by whitening will not change the outcome. For instance, centering and scaling with respect to the sites will result in the same value. 
+
+Let $\mathbf{b} \in \mathbb{R}^k$ be some arbitrary constant vector and $\mathbf{m} \in \mathbb{R}^k$ be some non-zero constant vector. If we take 
+$$
+\begin{aligned}
+\bfx' &= \begin{bmatrix} m_1 x_1 + b_1 & m_2 x_2 + b_2 & \cdots & m_k x_k + b_k  \end{bmatrix}^\intercal, \\
+\bfy' &= \begin{bmatrix} m_1 y_1 + b_1 & m_2 y_2 + b_2 & \cdots & m_k y_k + b_k  \end{bmatrix}^\intercal,
+\end{aligned}
+$$
+then transform the assumed covariance matrix of the new distribution $P$ accordingly with
+$$
+\tilde{\pmb{\Sigma}} = \diag (\mathbf{m}) \pmb\Sigma \diag (\mathbf{m}),
+$$
+then the term in the Mahalanobis distance simplifies to
+$$
+\begin{aligned}
+(\bfx' - \bfy')^\intercal \tilde{\pmb\Sigma}^{-1} (\bfx' - \bfy') &= 
+(\bfx - \bfy)^\intercal \diag (\mathbf{m}) \left(  \diag (\mathbf{m}) \pmb\Sigma \diag (\mathbf{m}) \right)^{-1} \diag (\mathbf{m}) (\bfx - \bfy) \\
+&= (\bfx - \bfy)^\intercal \pmb\Sigma^{-1} (\bfx - \bfy).
+\end{aligned}
+$$
+
+Though the sample setting estimates the covariance rather than relying on the known $P$, this invariance to centering and scaling still holds. That is, 
+
+$$
+\begin{aligned}
+\hat{\pmb\Sigma}_{\bfx'} &= \frac{1}{n_x - 1} \sum_{i = 1}^{n_x} (\bfx_i' - \overline{\bfx}') (\bfx_i' - \overline{\bfx}')^\intercal \\
+&= \frac{1}{n_x - 1} \sum_{i = 1}^{n_x} \diag(\mathbf{m}) (\bfx_i - \overline{\bfx}) (\bfx_i - \overline{\bfx})^\intercal \diag (\mathbf{m}) \\
+\bfx' - \bfy' &= \diag (\mathbf{m}) (\bfx - \bfy)
+\end{aligned}
+$$
+and the calculated statistic remains the same. 
+
+```{r, eval = F}
+# sanity check
+
+set.seed(20260820)
+k <- 10
+n <- 200
+n_x <- 50
+n_y <- 50
+
+d_M <- function(X, Y) {
+  n_x <- nrow(X) - 1
+  n_y <- nrow(Y) - 1
+  mu_diff <- (colMeans(X) - colMeans(Y)) %>%
+    matrix(nrow = ncol(X))
+  Sigma_inv <- ( (n_x * cov(X) + n_y * cov(Y)) / (n_x + n_y) ) %>% 
+    Rfast::spdinv()
+  ( t(mu_diff) %*% Sigma_inv %*% mu_diff ) %>%
+    sqrt() %>%
+    as.numeric() }
+
+make_XY <- function(dat, n_x, n_y, idx) {
+  X <- dat[idx[1:n_x], ]
+  Y <- dat[idx[(n_x + 1):(n_x + n_y)], ]
+  list(X, Y) }
+
+z_score <- function(dat) {
+  sweep(dat, 2, colMeans(dat), FUN = "-") %>%
+    sweep(., 2, Rfast::colVars(., std = T), FUN = "/") }
+
+scale_shift <- function(dat, m, b) {
+  sweep(dat, 2, b, FUN = "+") %>%
+    sweep(., 2, m, FUN = "*") }
+
+mu <- rnorm(k)
+sigma <- matrix(rnorm(k * k), nrow = k)
+Sigma <- sigma %*% t(sigma)
+
+dat <- MASS::mvrnorm(2 * n, mu, Sigma)
+idx <- sample(1:nrow(dat), n_x + n_y, replace = F)
+
+m <- rnorm(k)
+b <- rnorm(k)
+
+dat %>%
+  make_XY(n_x, n_y, idx) %>% 
+  do.call(d_M, .)
+dat %>%
+  z_score() %>%
+  make_XY(n_x, n_y, idx) %>% 
+  do.call(d_M, .)
+dat %>%
+  scale_shift(m, b) %>%
+  make_XY(n_x, n_y, idx) %>% 
+  do.call(d_M, .)
+```
+
+#### Effect of noise
+
+Out of curiosity, I wanted to examine how the eigenspectrum of the covariance matrix affects the distance calculation. 
+
+
+
+### Pairwise between-family distances
+
+When calculating the distance between each pair of texture families, each sample image and each repetition can be considered a draw from the underlying distribution.  
+
