@@ -1,5 +1,5 @@
 ---
-title: "Regression approach to representation"
+title: "Onset time and responsive site calculation, regression models"
 date: 2026-06-25
 author: Al Xin
 date-format: MMM D, YYYY
