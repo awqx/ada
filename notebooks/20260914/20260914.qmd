@@ -1,0 +1,274 @@
+---
+title: "High-reliability sites in V1 and V2 for sample separation"
+date: last-modified
+author: Al Xin
+date-format: MMM D, YYYY
+bibliography: ../../reports/refs.bib
+csl: ../../reports/nlm.csl
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+        \input{../../reports/statscmds.tex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260914"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+data_dir <- here("data", "processed", "20260625")
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+```{r}
+stimuli <- read.csv(here("data", "processed", "20260625", "stimuli.csv"))
+```
+
+## Distance between samples
+
+Based on `20260909`, the first pass results will be based on the pairwise sample distances, reported as the Mahalanobis distance with the Ledoit-Wolf shrinkage covariance estimator. The family-wise averages of the randomized dichotomy distances and the pairwise sample distances seem to be well correlated, so the overall results should be similarly reliable. 
+
+## Reliable site distributions
+
+@fig-corrs is a copy of the empirical CDFs and histograms of the split-half correlations for the sites, originally calculated in `20260826`. Previous results looked at the results for sites with correlations between 0.3 and 0.6. 
+
+Split-half correlations in V1 and IT are similarly shaped, with a right-skewed distribution and a mode around $\rho \approx 0.1$. For V2, the correlations are left-skewed. V4 has a somewhat bimodal distribution, with a local peak around $\rho \approx 0.1$ and $\rho \approx 0.6$. 
+
+```{r}
+#| label: fig-corrs
+#| fig-cap: "Empirical cumulative distribution functions (left) and histograms (right) for the split-half correlations by region. Data reflects split-half correlations performed when all blanks are averaged. V1 and IT are right-skewed, V2 is left-skewed, and V4 has a somewhat bimodal distribution for low- and high-correlations."
+#| fig-width: 5.5
+#| fig-height: 2.75
+library(patchwork)
+regions <- c("V1", "V2", "V4", "IT")
+p_ecdf <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(n_blanks == 1) %>%
+  filter(grp_type == "img") %>%
+  ggplot(aes(x = corr, color = region)) + 
+    stat_ecdf() + 
+    labs(
+      x = "Correlation", 
+      y = "Empirical cumulative probability", 
+      color = "Region") + 
+  theme(legend.position = "none")
+
+p_corrs_img <-  read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(n_blanks == 1, grp_type == "img") %>%
+  ggplot(aes(x = corr, fill = region)) + 
+    geom_histogram(aes(y = ..ncount..), bins = 15) + 
+    labs(y = NULL, x = "Split-half correlation", fill = NULL) + 
+    facet_wrap(vars(region)) + 
+    theme(axis.text.y = element_blank(), panel.grid = element_blank(), legend.position = "right")
+
+p_ecdf + p_corrs_img + plot_layout(ncol = 2, widths = c(1, 1.2))
+```
+
+## Effect of reliability cutoffs
+
+### V2 and V4 comparisons
+
+Since previous results only selected sites with $\rho \in (0.3, 0.6)$, the highest reliability sites tend to be omitted. One sanity check is to make sure the relative results still hold even when taking a different reliability cutoff. 
+
+Only V2 and V4 have more than 20 reliable sites with $\rho > 0.6$. 
+ 
+```{r, eval = F}
+regions <- c("V1", "V2", "V4", "IT")
+read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(grp_type == "img", n_blanks == 1) %>%
+  mutate(matched = corr > 0.5 & corr < 0.7) %>%
+  group_by(region) %>% 
+  summarize(n_sites = sum(matched))
+```
+
+```{r}
+set.seed(20260915)
+source(here("R", "dM.R"))
+
+# regions <- c("V1", "V2", "V4", "IT")
+regions <- c("V2", "V4")
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+n_sites <- 30
+
+ps_params <- expand.grid(
+  family = unique(stimuli$family), 
+  coherence = c(1, 2),
+  region = regions) %>%
+  filter(family != 0) %>% # remove blanks
+  mutate(region = as.character(region))
+matched_sites <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+  filter(grp_type == "img", n_blanks == 1) %>%
+  filter(corr > 0.6)
+
+sites <- lapply(
+  regions, 
+  function(rgn) {
+    site_ids <- matched_sites %>% 
+      filter(region == rgn) %>% 
+      .$site 
+    sample(site_ids, n_sites, replace = F)})
+names(sites) <- regions
+
+v2_v4_ps <- lapply(
+  cli_progress_along(1:nrow(ps_params)), 
+  function(i) {
+    fam <- ps_params[i, "family"]
+    coherence <- ps_params[i, "coherence"]
+    rgn <- ps_params[i, "region"]
+    
+    keep_idx <- (stimuli$coherence == coherence) & (stimuli$family == fam)
+    img_grps <- stimuli[keep_idx, "id"]
+    dat <- avgs[[rgn]][keep_idx, sites[[rgn]]]
+    
+    dM_pairwise(
+      dat = dat, 
+      grps = img_grps, 
+      return_diff = F) %>%
+      mutate(
+        region = rgn, 
+        family = fam, 
+        coherence = ifelse(coherence == 1, "noisy", "natur")) }) %>%
+  do.call(rbind, .)
+```
+
+```{r}
+regions <- c("V2", "V4")
+v2_v4_ps %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = case_when(
+    coherence == "natur" ~ "Naturalistic", 
+    coherence == "noisy" ~ "Noisy")) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence), scales = "free_y") +
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "High reliability between-sample distances", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+```
+
+```{r}
+set.seed(20260915)
+source(here("R", "dM.R"))
+
+regions <- c("V1", "V2")
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+n_sites <- 12
+
+ps_params <- expand.grid(
+  family = unique(stimuli$family), 
+  coherence = c(1, 2),
+  region = regions) %>%
+  filter(family != 0) %>% # remove blanks
+  mutate(region = as.character(region))
+matched_sites <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+  filter(grp_type == "img", n_blanks == 1) %>%
+  filter(corr > 0.5 & corr < 0.7) 
+
+sites <- lapply(
+  regions, 
+  function(rgn) {
+    site_ids <- matched_sites %>% 
+      filter(region == rgn) %>% 
+      .$site 
+    sample(site_ids, n_sites, replace = F)})
+names(sites) <- regions
+
+v1_v2_ps <- lapply(
+  cli_progress_along(1:nrow(ps_params)), 
+  function(i) {
+    fam <- ps_params[i, "family"]
+    coherence <- ps_params[i, "coherence"]
+    rgn <- ps_params[i, "region"]
+    
+    keep_idx <- (stimuli$coherence == coherence) & (stimuli$family == fam)
+    img_grps <- stimuli[keep_idx, "id"]
+    dat <- avgs[[rgn]][keep_idx, sites[[rgn]]]
+    
+    dM_pairwise(
+      dat = dat, 
+      grps = img_grps, 
+      return_diff = F) %>%
+      mutate(
+        region = rgn, 
+        family = fam, 
+        coherence = ifelse(coherence == 1, "noisy", "natur")) }) %>%
+  do.call(rbind, .)
+
+v1_v2_ps %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = case_when(
+    coherence == "natur" ~ "Naturalistic", 
+    coherence == "noisy" ~ "Noisy")) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence), scales = "free_y") +
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "High reliability between-sample distances", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+```
+
+```{r}
+v1_v2_ps %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(coherence == "natur") %>%
+  ggplot(aes(region, multi_d)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_wrap(vars(family)) +
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "High reliability between-sample distances", 
+      fill = NULL) + 
+  theme(legend.position = "none") +
+  theme(strip.text.x = element_blank(), panel.grid = element_blank())
+```
+
+
+## References
+
+::: {#refs}
+:::
