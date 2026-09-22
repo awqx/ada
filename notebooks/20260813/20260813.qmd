@@ -174,9 +174,11 @@ summarize_firing <- function(mua, grp) {
 
 The per-site mean and standard deviations for firings for all non-blank images can be seen in @fig-sites, with rescaled histograms at the bottom of the figure. The means are reported as the difference with the blank images. The difference in means for IT tends to be lower, with more concentration around zero. The high differences in means for V2 and V4 are consistent with existing literature on naturalistic texture responses.  
 
+The coloring scheme is based on the quintiles over all observations and are therefore not even along the scale but are more informative in terms of color (hopefully). 
+
 ```{r}
 #| label: fig-sites
-#| fig-cap: "(Top) Difference in mean response and standard deviations of responses to pooled non-blank images for each region and site. (Bottom) Summary of above information in histogram with dashed lines indicating the median. IT shows lower and less variable differences in mean firing rate and lower standard deviations."
+#| fig-cap: "(Top) Overall mean firing, difference in mean response between non-blank and blank, and standard deviations of responses to pooled non-blank images for each region and site. Color coding indicates the quartiles within each metric. (Bottom) Summary of above information in histogram with dashed lines indicating the median. IT shows lower and less variable differences in mean firing rate and lower standard deviations."
 #| fig-width: 5
 #| fig-height: 5
 
@@ -194,22 +196,34 @@ site_firing <- lapply(regions,
   select(-grp) %>%
   left_join(blank_wide, by = c("site", "region")) %>%
   mutate(mu_diff = mu - mu_blank, .before = sd) %>%
+  # weighted average of non-blank and blanks
+  mutate(mu = (315 * mu + 60 * mu_blank) / 375) %>%
   select(-mu_blank, -sd_blank) %>%
   pivot_longer(mu:sd, names_to = "nm", values_to = "val") %>%
   mutate(val = val * 100) %>%
-  filter(nm != "mu") %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  # filter(nm != "mu") %>%
   mutate(nm = replace_values(nm, 
-    "mu_diff" ~ "Diff. in means", 
-    "sd" ~ "Std. dev.")) 
+    "mu_diff" ~ "Diff. in means",
+    "mu" ~ "Overall mean",
+    "sd" ~ "Std. dev.")) %>%
+  mutate(nm = factor(nm)) %>%
+  mutate(nm = relevel(nm, ref = "Overall mean"))
+
+# quantile(site_firing$val, 1:4 * 0.2)
 
 p_sites_1 <- site_firing %>%
   mutate(region = factor(region, levels = rev(regions))) %>%
-  ggplot(aes(x = site, y = region, fill = val)) + 
+  group_by(nm) %>%
+  mutate(quartile = ntile(val, 4)) %>%
+  mutate(quartile = paste0("Q", quartile)) %>%
+  ggplot(aes(x = site, y = region, fill = quartile)) + 
     geom_raster() + 
-    facet_wrap(vars(nm), nrow = 2) + 
-    scale_fill_continuous(palette = "cividis") + 
+    facet_wrap(vars(nm), nrow = 3) + 
+    scale_fill_viridis_d(begin = 0.25, end = 0.9) + 
     labs(x = "Site", y = NULL, fill = "Hz") + 
-    theme(panel.grid = element_blank())
+    theme(panel.grid = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
 
 site_summary <- site_firing %>%
   group_by(region, nm) %>%
@@ -217,14 +231,36 @@ site_summary <- site_firing %>%
 
 p_sites_2 <- site_firing %>%
   ggplot(aes(x = val)) +
-    geom_histogram(aes(y = ..ncount..), bins = 20, fill = "#31446b") +
+    geom_histogram(aes(y = ..ncount..), bins = 20, fill = "#3e4989") +
     facet_grid(cols = vars(nm), rows = vars(region), scales = "free_x") +
     labs(y = "Density", x = "Hz (impulses per second)") +
-    theme(axis.text.y = element_blank()) +
+    theme(axis.text.y = element_blank(), panel.grid = element_blank()) +
     geom_vline(data = site_summary, aes(xintercept = val), linetype = "dashed")
 
-p_sites_1 / p_sites_2 + plot_layout(heights = c(1, 2))
+p_sites <- p_sites_1 / p_sites_2 
+p_sites
 ```
+
+```{r, eval = F}
+p_sites_1_wide <- site_firing %>%
+  mutate(region = factor(region, levels = rev(regions))) %>%
+  group_by(nm) %>%
+  mutate(quartile = ntile(val, 4)) %>%
+  mutate(quartile = paste0("Q", quartile)) %>%
+  ggplot(aes(x = site, y = region, fill = quartile)) + 
+    geom_raster() + 
+    facet_wrap(vars(nm), nrow = 3) + 
+    # scale_fill_continuous(palette = "cividis") + 
+    scale_fill_viridis_d(begin = 0.25, end = 0.9) + 
+    labs(x = "Site", y = NULL, fill = "Hz") + 
+    theme(panel.grid = element_blank(), legend.position = "bottom")
+p_sites_wide <- p_sites_1_wide | p_sites_2 
+
+ggsave(here(res_dir, "firing_site.png"), p_sites, width = 4.5, height = 5.5, dpi = 600)
+ggsave(here(res_dir, "firing_site-wide.png"), p_sites_wide, width = 7, height = 4, dpi = 600)
+ggsave(here(res_dir, "firing_site-1.png"), p_sites_1, width = 4, height = 4.5, dpi = 600)
+```
+
 
 ```{r}
 qs_save(blank_wide, here(out_dir, "blank_wide.qs2"))
@@ -258,38 +294,56 @@ library(patchwork)
 fam_firing <- qs_read(here(out_dir, "fam_firing.qs2")) %>% 
   left_join(blank_wide, by = c("site", "region")) %>%
   mutate(mu_diff = mu - mu_blank, .before = sd) %>%
+  mutate(mu = (315 * mu + 60 * mu_blank) / 375) %>%
   select(-mu_blank, -sd_blank) %>%
   pivot_longer(mu:sd, names_to = "nm", values_to = "val") %>%
   mutate(val = val * 100) %>%
-  filter(nm != "mu") %>%
   mutate(nm = replace_values(nm, 
-    "mu_diff" ~ "Diff. in means", 
+    "mu_diff" ~ "Diff. in means",
+    "mu" ~ "Overall mean",
     "sd" ~ "Std. dev.")) %>%
-  mutate(region = factor(region, levels = regions))
+  mutate(nm = factor(nm)) %>%
+  mutate(nm = relevel(nm, ref = "Overall mean")) %>%
+  mutate(region = factor(region, levels = regions)) 
 
 p_fam_1 <- fam_firing %>%
   filter(nm == "Diff. in means") %>%
-  ggplot(aes(x = site, y = fam, fill = val)) + 
+  group_by(nm) %>%
+  mutate(quartile = ntile(val, 4)) %>%
+  mutate(quartile = paste0("Q", quartile)) %>%
+  ggplot(aes(x = site, y = fam, fill = quartile)) + 
     geom_raster() + 
     facet_wrap(vars(region)) + 
-    scale_fill_continuous(palette = "viridis") + 
+    scale_fill_viridis_d(begin = 0.25, end = 0.9) + 
     labs(x = NULL, y = "Family", fill = "Mean diff. (Hz)") + 
     theme(
       panel.grid = element_blank(), 
       axis.text.x = element_blank(), 
-      axis.text.y = element_blank()) 
+      axis.text.y = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
 
 p_fam_2 <- fam_firing %>%
   filter(nm == "Std. dev.") %>%
-  ggplot(aes(x = site, y = fam, fill = val)) + 
+  group_by(nm) %>%
+  mutate(quartile = ntile(val, 4)) %>%
+  mutate(quartile = paste0("Q", quartile)) %>%
+  ggplot(aes(x = site, y = fam, fill = quartile)) + 
     geom_raster() + 
     facet_wrap(vars(region)) + 
-    scale_fill_continuous(palette = "magma") + 
+    scale_fill_viridis_d(option = "magma", begin = 0.3, end = 0.9) + 
     labs(x = "Site", y = "Family", fill = "SD (Hz)") + 
-    theme(panel.grid = element_blank(), axis.text.y = element_blank())
+    theme(
+      panel.grid = element_blank(), 
+      axis.text.y = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
 
 p_fam_1 / p_fam_2
 ```
+
+```{r, eval = F}
+ggsave(here(res_dir, "firing_fam.png"), width = 5, height = 6, dpi = 600)
+```
+
 
 #### Distribution when pooled over specific image repetitions
 
@@ -321,41 +375,102 @@ library(patchwork)
 
 img_firing <- qs_read(here(out_dir, "img_firing.qs2")) %>%
   left_join(blank_wide, by = c("site", "region")) %>%
-  mutate(mu_diff = mu - mu_blank, .before = sd) %>%
+  mutate(mu_diff = mu - mu_blank, .before = sd)%>%
+  mutate(mu = (315 * mu + 60 * mu_blank) / 375) %>%
   select(-mu_blank, -sd_blank) %>%
   pivot_longer(mu:sd, names_to = "nm", values_to = "val") %>%
   mutate(val = val * 100) %>%
-  filter(nm != "mu") %>%
   mutate(nm = replace_values(nm, 
-    "mu_diff" ~ "Diff. in means", 
+    "mu_diff" ~ "Diff. in means",
+    "mu" ~ "Overall mean",
     "sd" ~ "Std. dev.")) %>%
-  mutate(
-    region = factor(region, levels = regions), 
-    nm = factor(nm, levels = c("Diff. in means", "Std. dev.")))
+  mutate(nm = factor(nm)) %>%
+  mutate(nm = relevel(nm, ref = "Overall mean")) %>%
+  mutate(region = factor(region, levels = regions)) 
 
 p_img_1 <- img_firing %>%
-  filter(nm == "Diff. in means") %>%
-  ggplot(aes(x = site, y = img, fill = val)) + 
+  filter(nm == "Diff. in means")  %>%
+  group_by(nm) %>%
+  mutate(quartile = ntile(val, 4)) %>%
+  mutate(quartile = paste0("Q", quartile)) %>%
+  ggplot(aes(x = site, y = img, fill = quartile)) + 
     geom_raster() + 
     facet_wrap(vars(region)) + 
-    scale_fill_continuous(palette = "viridis") + 
+    scale_fill_viridis_d(begin = 0.25, end = 0.9) + 
     labs(x = NULL, y = "Sample image", fill = "Mean diff. (Hz)") + 
     theme(
       panel.grid = element_blank(), 
       axis.text.x = element_blank(), 
-      axis.text.y = element_blank()) 
+      axis.text.y = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
 
 p_img_2 <- img_firing %>%
-  filter(nm == "Std. dev.") %>%
-  ggplot(aes(x = site, y = img, fill = val)) + 
+  filter(nm == "Std. dev.")  %>%
+  group_by(nm) %>%
+  mutate(quartile = ntile(val, 4)) %>%
+  mutate(quartile = paste0("Q", quartile)) %>%
+  ggplot(aes(x = site, y = img, fill = quartile)) + 
     geom_raster() + 
     facet_wrap(vars(region)) + 
-    scale_fill_continuous(palette = "magma") + 
-    labs(x = "Site", y = "Sample image", fill = "SD (Hz)") + 
-    theme(panel.grid = element_blank(), axis.text.y = element_blank())
+    scale_fill_viridis_d(option = "magma", begin = 0.25, end = 0.9) + 
+    labs(x = NULL, y = "Sample image", fill = "SD (Hz)") + 
+    theme(
+      panel.grid = element_blank(), 
+      axis.text.x = element_blank(), 
+      axis.text.y = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
 
 p_img_1 / p_img_2
 ```
+
+```{r, eval = F}
+ggsave(here(res_dir, "firing_img.png"), width = 5, height = 8, dpi = 600)
+```
+
+```{r, eval = F}
+# Mean diff only for family and image grouping
+# for presentation purposes
+fam_img_mu_diff <- rbind(
+  fam_firing %>% 
+    rename(y = fam) %>%
+    mutate(grp = "Family"), 
+  img_firing %>% 
+    rename(y = img) %>%
+    mutate(grp = "Sample image")) %>%
+  group_by(grp) %>%
+  mutate(quartile = ntile(val, 4)) %>%
+  mutate(quartile = paste0("Q", quartile))
+
+p_fam_mu <- fam_img_mu_diff %>%
+  filter(grp == "Family") %>%
+  ggplot(aes(x = site, y = y, fill = quartile)) + 
+    geom_raster() + 
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_fill_viridis_d(option = "mako", begin = 0.3, end = 0.95) + 
+    labs(x = NULL, y = "Family", fill = "Mean diff. (Hz)") + 
+    theme(
+      panel.grid = element_blank(), 
+      axis.text.x = element_blank(), 
+      axis.text.y = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
+
+p_img_mu <- fam_img_mu_diff %>%
+  filter(grp == "Sample image") %>%
+  ggplot(aes(x = site, y = y, fill = quartile)) + 
+    geom_raster() + 
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_fill_viridis_d(option = "magma", begin = 0.25, end = 0.9) + 
+    labs(x = NULL, y = "Sample image", fill = "Mean diff. (Hz)") + 
+    theme(
+      panel.grid = element_blank(), 
+      axis.text.x = element_blank(), 
+      axis.text.y = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
+
+p_mu_diff <- p_fam_mu / p_img_mu + plot_layout(heights = c(1, 1.5))
+ggsave(here(res_dir, "firing_fam_img.png"), p_mu_diff, width = 8, height = 5, dpi = 600)
+```
+
 
 ### Two sample t-test results
 
@@ -387,22 +502,26 @@ qs_save(t_tests, here(out_dir, "t_tests.qs2"))
 
 ```{r}
 #| label: fig-t_tests
-#| fig-cap: "(Top) Heat map of the t-statistics calculated for each combination of site and image. The degrees of freedom are identical fir eacg test. The scale has been truncated to (-3, 12). (Bottom) Corresponding p-values, simplified to indicate whether values are below or above a cutoff of 0.01. The graphs are similar to the difference in means plots, though the p-value plot more clearly shows the vertical, per-site firing consistency in V4 and the sparseness in IT."
-#| fig-width: 4.5
-#| fig-height: 8
+#| fig-cap: "(Top) Heat map of the t-statistics calculated for each combination of site and image. The degrees of freedom are identical for each test. The scale has been truncated to (-3, 12). (Bottom) Corresponding p-values, simplified to indicate whether values are below or above a cutoff of 0.01. The graphs are similar to the difference in means plots, though the p-value plot more clearly shows the vertical, per-site firing consistency in V4 and the sparseness in IT."
+#| fig-width: 5.5
+#| fig-height: 4
 t_tests <- qs_read(here(out_dir, "t_tests.qs2"))
 p_val_cutoff <- 0.01
 
 p_tstat <- t_tests %>%
-  ggplot(aes(x = site, y = img_id, fill = t_stat)) + 
+  mutate(quartile = ntile(t_stat, 4)) %>%
+  mutate(quartile = paste0("Q", quartile)) %>%
+  ggplot(aes(x = site, y = img_id, fill = quartile)) + 
     geom_raster() + 
-    facet_wrap(vars(region)) + 
-    scale_fill_continuous(
-      palette = "mako", 
-      limits = c(-3, 12), 
-      oob = scales::squish) + 
+    facet_wrap(vars(region), nrow = 1) + 
+    # scale_fill_continuous(
+    #   palette = "mako", 
+    #   limits = c(-3, 12), 
+    #   oob = scales::squish) + 
+    scale_fill_viridis_d(option = "rocket", begin = 0.3, end = 0.9) + 
     labs(x = NULL, y = "Sample image", fill = "Welch's t") + 
-    theme(panel.grid = element_blank(), axis.text.y = element_blank()) 
+    theme(panel.grid = element_blank(), axis.text.y = element_blank(), axis.text.x = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
 
 p_pval <- t_tests %>%
   mutate(p_cutoff = p_val <= p_val_cutoff) %>%
@@ -411,12 +530,73 @@ p_pval <- t_tests %>%
   mutate(p_cutoff = factor(p_cutoff)) %>%
   ggplot(aes(x = site, y = img_id, fill = p_cutoff)) + 
     geom_raster() + 
-    facet_wrap(vars(region)) + 
+    facet_wrap(vars(region), nrow = 1) + 
     labs(x = "Site", y = "Sample image", fill = "p-value") + 
-    scale_fill_discrete(palette = c("#DF536B", "gray96")) + 
-    theme(panel.grid = element_blank(), axis.text.y = element_blank()) 
+    scale_fill_discrete(palette = c("#009E73", "gray96")) + 
+    theme(panel.grid = element_blank(), axis.text.y = element_blank(), strip.text.x = element_blank()) 
 
 p_tstat / p_pval
-rm(t_tests)
 ```
 
+```{r, eval = F}
+p_t_tests <- p_tstat / p_pval
+ggsave(here(res_dir, "t_tests.png"), width = 7, height = 4, dpi = 600)
+```
+
+#### On sites
+
+```{r, eval = F}
+library(cli)
+t_tests_sites <- lapply(
+  cli_progress_along(1:length(regions)), 
+  function(i) {
+    region <- regions[i]
+    mua_img <- avgs[[region]]
+    lapply(1:ncol(mua_img), 
+      function(site) {
+        y_blank <- mua_blank[[region]][, site]
+        x_img   <- mua_img[, site]
+        t_res   <- t.test(y = y_blank, x = x_img)
+        data.frame(
+          site = site, 
+          t_stat = t_res$statistic, 
+          p_val = t_res$p.value) }) %>%
+      do.call(rbind, .) %>%
+      mutate(region = region) }) %>%
+  do.call(rbind, .)
+qs_save(t_tests_sites, here("data", "processed", "20260813", "t_tests_sites.qs2"))
+```
+
+```{r}
+#| label: fig-t_tests_site
+#| fig-cap: "(Top) Heat map of the t-statistics calculated for each combination of site and image. The degrees of freedom are identical for each test. The scale has been truncated to (-3, 12). (Bottom) Corresponding p-values, simplified to indicate whether values are below or above a cutoff of 0.01. The graphs are similar to the difference in means plots, though the p-value plot more clearly shows the vertical, per-site firing consistency in V4 and the sparseness in IT."
+#| fig-width: 5.5
+#| fig-height: 4
+t_sites <- qs_read(here("data", "processed", "20260813", "t_tests_sites.qs2"))
+p_val_cutoff <- 0.01
+
+p_tstat <- t_sites %>%
+  mutate(region = factor(region, levels = rev(regions))) %>%
+  mutate(quartile = ntile(t_stat, 4)) %>%
+  mutate(quartile = paste0("Q", quartile)) %>%
+  ggplot(aes(x = site, y = region, fill = quartile)) + 
+    geom_raster() + 
+    scale_fill_viridis_d(option = "rocket", begin = 0.3, end = 0.9) + 
+    labs(x = NULL, y = "Sample image", fill = "Welch's t") + 
+    theme(panel.grid = element_blank(), axis.text.y = element_blank(), axis.text.x = element_blank()) + 
+    guides(fill = guide_legend(reverse = TRUE))
+
+# p_pval <- t_tests %>%
+#   mutate(p_cutoff = p_val <= p_val_cutoff) %>%
+#   mutate(p_cutoff = ifelse(p_cutoff, "<", ">")) %>%
+#   mutate(p_cutoff = paste(p_cutoff, p_val_cutoff)) %>%
+#   mutate(p_cutoff = factor(p_cutoff)) %>%
+#   ggplot(aes(x = site, y = img_id, fill = p_cutoff)) + 
+#     geom_raster() + 
+#     facet_wrap(vars(region), nrow = 1) + 
+#     labs(x = "Site", y = "Sample image", fill = "p-value") + 
+#     scale_fill_discrete(palette = c("#009E73", "gray96")) + 
+#     theme(panel.grid = element_blank(), axis.text.y = element_blank(), strip.text.x = element_blank()) 
+
+# p_tstat / p_pval
+```

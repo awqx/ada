@@ -158,21 +158,34 @@ n <- 200
 n_x <- 50
 n_y <- 50
 
-d_M <- function(X, Y) {
+d_M <- function(X, Y, shrink = T) {
   n_x <- nrow(X) - 1
   n_y <- nrow(Y) - 1
   mu_diff <- (colMeans(X) - colMeans(Y)) %>%
     matrix(nrow = ncol(X))
-  Sigma_inv <- ( (n_x * cov(X) + n_y * cov(Y)) / (n_x + n_y) ) %>% 
-    Rfast::spdinv()
+  
+  if (shrink) {
+    Sigma_inv <- rbind(sweep(X, 2, colMeans(X), FUN = "-"),
+          sweep(Y, 2, colMeans(Y), FUN = "-")) %>%
+      corpcor::invcov.shrink(verbose = F)
+  } else {
+    Sigma_inv <- ( (n_x * cov(X) + n_y * cov(Y)) / (n_x + n_y) ) %>% 
+      Rfast::spdinv()
+  }
+  
   ( t(mu_diff) %*% Sigma_inv %*% mu_diff ) %>%
     sqrt() %>%
     as.numeric() }
 
-make_XY <- function(dat, n_x, n_y, idx) {
+make_XY <- function(dat, n_x = 10, n_y = 10, idx = NULL) {
+  if (is.null(idx)) {
+    n_ <- nrow(dat) / 2
+    return(list(dat[1:n_, ], dat[(n_ + 1):(2 * n_), ])) }
+  
   X <- dat[idx[1:n_x], ]
   Y <- dat[idx[(n_x + 1):(n_x + n_y)], ]
-  list(X, Y) }
+  list(X, Y) 
+}
 
 z_score <- function(dat) {
   sweep(dat, 2, colMeans(dat), FUN = "-") %>%
@@ -205,11 +218,87 @@ dat %>%
   do.call(d_M, .)
 ```
 
-#### Effect of noise
+#### Effect of zero-distance dimensions. 
 
-Out of curiosity, I wanted to examine how the eigenspectrum of the covariance matrix affects the distance calculation. 
+If elements of $\bfx - \bfy$ are truly zero, then they have no effect on the calculated theoretical Mahalanobis distance. 
+
+- Idea: James-Stein estimator on $\| \mathbf{S}^{-1} (\bfx - \bfy) \|$?
+- Seems like might have been done before: 
+  - Cabana, E., Lillo, R.E. & Laniado, H. Multivariate outlier detection based on a robust Mahalanobis distance with shrinkage estimators. Stat Papers 62, 1583–1609 (2021). https://doi.org/10.1007/s00362-019-01148-1
+
+```{r}
+#| label: fig-d_M_noise
+#| fig-cap: "The empirical Mahalanobis distance increases with the number of zero-distance components (with 10 true non-zero components of value 1). The estimate shrinks with increasing sample size. Interestingly, this is also the case with no noisy components."  
+#| fig-width: 4
+#| fig-height: 3
+set.seed(20260820)
+k <- 10
+
+add_noise <- function(k, k_noise, n) {
+  k_ <- k + k_noise
+  mu_ <- c(rep(1, k), rep(0, k_noise))
+  sigma <- matrix(rnorm(k_ * k_), nrow = k_)
+  Sigma <- sigma %*% t(sigma)
+  MASS::mvrnorm(2 * n, mu_, Sigma) %>%
+    make_XY() %>%
+    do.call(d_M, .)
+}
+
+d_M <- function(X, Y, shrink = T, james_stein = T) {
+  n_x <- nrow(X) - 1
+  n_y <- nrow(Y) - 1
+  mu_diff <- (colMeans(X) - colMeans(Y)) %>%
+    matrix(nrow = ncol(X))
+  
+  if (n_x < ncol(X) | n_y < ncol(Y))
+    shrink <- T
+  
+  if (shrink) {
+    Sigma <- rbind(sweep(X, 2, colMeans(X), FUN = "-"),
+          sweep(Y, 2, colMeans(Y), FUN = "-")) %>%
+      corpcor::cov.shrink(verbose = F)
+  } else {
+    Sigma <- ( (n_x * cov(X) + n_y * cov(Y)) / (n_x + n_y) )
+  }
+  
+  if (james_stein) {
+    mu_diff <- (1)
+  }
+  
+  Sigma_inv <- Rfast::spdinv(Sigma)
+  ( t(mu_diff) %*% Sigma_inv %*% mu_diff ) %>%
+    sqrt() %>%
+    as.numeric() }
 
 
+params <- expand.grid(
+  k_noise = c(0, 5, 10, 15, 20), 
+  n = c(40, 60, 80, 100, 120))
+reps <- 100
+
+d_M_spread <- lapply(1:nrow(params), 
+  function(i) {
+    k_noise <- params$k_noise[i]
+    n <- params$n[i]
+    replicate(reps, add_noise(k, k_noise, n)) %>%
+      data.frame(d_M = ., k_noise, n)
+  }) %>%
+  do.call(rbind, .) %>%
+  group_by(k_noise, n) %>%
+  summarize(temp = list(mean_se(d_M)), .groups = "drop") %>%
+  unnest(temp)
+
+d_M_spread %>%
+  mutate(n = factor(n)) %>%
+  ggplot(aes(x = k_noise, y = y, color = n)) + 
+    geom_line() + 
+    geom_errorbar(aes(ymin = ymin, ymax = ymax), width = 0.2) + 
+    labs(
+      x = "Number of noise elements", 
+      y = "Mahalanobis distance", 
+      color = "Samples"
+    )
+```
 
 ### Pairwise between-family distances
 
