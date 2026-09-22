@@ -1,0 +1,353 @@
+---
+title: "Split-half correlations on earlier or shorter windows"
+date: last-modified
+author: Al Xin
+date-format: MMM D, YYYY
+bibliography: ../../reports/refs.bib
+csl: ../../reports/nlm.csl
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+        \input{../../reports/statscmds.tex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260917"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+```{r}
+stimuli <- read.csv(here("data", "processed", "20260625", "stimuli.csv"))
+regions <- c("V1", "V2", "V4", "IT")
+```
+
+## Takeaways
+
+- Split-half correlations for earlier and shorter windows align with the original split-half correlations. 
+- IT is an exception, since earlier and shorter windows produce very low split-half correlations. 
+- The between-family trend stays similar, though IT distances are lower relative to V4 (likely due to the difficulty in matching correlations). The trend also appears in noisy textures. 
+- The between-sample trend changes, with V1 trending higher, possibly higher than V4 and IT. V2 remains the "best".
+- The changes require more investigation, as the correlations are harder to match with the new averages. The results may be confounded with the distribution of the reliabilities. 
+
+## Split-half correlations with other onset time schemes
+
+Here, I check if the previous between-family and between-sample results are consistent if the onsets are shifted earlier or if the averaging window is shorter.
+
+The calculations for the new split-half correlations can be found in `scripts/split_corrs_earlier_onsets.R` and associated bash script. 
+
+### Comparison of original onsets and earlier onsets over shorter windows
+
+To capture initial firing, I calculated split-half correlations over earlier onset times with shorter windows (100 ms vs. the original 150 ms). These earlier, shorter split-half correlations are fairly well correlated with the original split-half correlations (@fig-split_corrs_vs). However, in IT, the earlier, shorter correlations tend to be closer to zero, which is not surprising considering 60 to 160 ms barely captures the averaged response curve (not shown). 
+
+The distributions of the correlations for each condition can be seen in @fig-split_corrs_vs_hist. For V1, taking earlier and shorter windows appears to slightly increase the split-half correlations. This trend reverses for the other regions.
+
+```{r, eval = F}
+regions <- c("V1", "V2", "V4", "IT")
+earlier_params <- expand.grid(region = regions, window_ms = c(100, 150))
+
+earlier_corrs <- lapply(
+  1:nrow(earlier_params), 
+  function(i) {
+    rgn <- earlier_params[i, "region"]
+    ms <- earlier_params[i, "window_ms"]
+    
+    here(out_dir, "split_corrs", rgn, paste0("earlier_", ms, ".csv")) %>%
+      read.csv() %>%
+      rowMeans() %>%
+      data.frame(corr = .) %>%
+      mutate(region = rgn, ms = ms, site = row_number()) }) %>%
+  do.call(rbind, .) %>%
+  mutate(onset_type = "earlier")
+median_corrs <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(n_blanks == 1, grp_type == "img") %>%
+  select(-grp_type, -n_blanks) %>%
+  mutate(onset_type = "median", ms = 150)
+median_corrs_ <- lapply(
+  regions, 
+  function(rgn) {
+    here(out_dir, "split_corrs", rgn, "median_100.csv") %>%
+      read.csv() %>%
+      rowMeans() %>%
+      data.frame(corr = .) %>%
+      mutate(region = rgn, ms = 100, site = row_number()) }) %>%
+  do.call(rbind, .) %>%
+  mutate(onset_type = "median")
+split_corrs <- rbind(earlier_corrs, median_corrs, median_corrs_)
+write.csv(split_corrs, here(out_dir, "split_corrs.csv"), row.names = F)
+```
+
+```{r}
+#| label: fig-split_corrs_vs
+#| fig-cap: "Scatter plots comparing the per-site split-half correlations when onset times are earlier with 100 ms window vs. median with 150 ms window."
+#| fig-height: 4
+#| fig-width: 4.5
+
+split_corrs <- here(out_dir, "split_corrs.csv") %>%
+  read.csv() 
+
+# earlier 150 ms vs. earlier 100 ms
+# split_corrs %>%
+#   pivot_wider(names_from = ms, values_from = corr, names_prefix = "ms_") %>%
+#   filter(onset_type == "earlier") %>%
+#   mutate(region = factor(region, levels = regions)) %>%
+#   ggplot(aes(x = ms_150, y = ms_100)) + 
+#     geom_point() + 
+#     facet_wrap(vars(region), ncol = 2)
+
+# earlier 100 ms vs. median 150 ms (original)
+split_corrs %>%
+  filter((onset_type == "earlier" & ms == 100) | (onset_type == "median" & ms == 150)) %>%
+  select(-ms) %>%
+  pivot_wider(names_from = onset_type, values_from = corr) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(x = median, y = earlier, color = region)) + 
+    geom_point() + 
+    facet_wrap(vars(region), ncol = 2) +
+    labs(x = "Pearson's ρ (median onset, 150 ms)", 
+         y = "Pearson's ρ (early onset, 100 ms)") + 
+    theme(legend.position = "none")
+```
+
+```{r}
+#| label: fig-split_corrs_vs_hist
+#| fig-cap: "Histograms comparing the per-site split-half correlations when onset times are earlier with 100 ms window vs. median with 150 ms window."
+#| fig-height: 3
+#| fig-width: 5
+library(patchwork)
+# earlier 100 ms vs. median 150 ms (original)
+split_corrs %>%
+  filter((onset_type == "earlier" & ms == 100) | (onset_type == "median" & ms == 150)) %>%
+  select(-ms) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(onset_type = replace_when(onset_type, 
+    onset_type == "earlier" ~ "Earlier", onset_type == "median" ~ "Median")) %>%
+  ggplot(aes(x = corr, y = ..ncount.., fill = region)) + 
+    geom_histogram(bins = 12) + 
+    facet_grid(cols = vars(region), rows = vars(onset_type)) +
+    labs(x = "Pearson's ρ", 
+         y = NULL) + 
+    theme(
+      legend.position = "none", 
+      scale_x_continuous(breaks = 0:5 * 0.2),
+      axis.text.y = element_blank(), 
+      panel.grid = element_blank())
+```
+
+```{r, eval = F}
+#| fig-height: 4
+#| fig-width: 4.5
+# earlier 150 ms vs. median 150 ms (original)
+split_corrs %>%
+  filter(ms == 150) %>%
+  pivot_wider(names_from = onset_type, values_from = corr) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(x = median, y = earlier, color = region)) + 
+    geom_point() + 
+    facet_wrap(vars(region), ncol = 2) +
+    labs(x = "Pearson's ρ (median onset, 150 ms)", 
+         y = "Pearson's ρ (early onset, 150 ms)") + 
+    theme(legend.position = "none")
+```
+
+## Between-family distances 
+
+The IT reliabilities are pretty low, so it's not easy to get matched-reliability results with the previous method (selecting sites with correlations in some interval). In @fig-family, IT dips below V4, likely as a result of the low reliabilities. Otherwise, V1 < V2 < V4, as expected. 
+
+Unlike the previous results, the trend also emerges in noisy images. 
+
+```{r, eval = F}
+source(here("R", "dM.R"))
+set.seed(20260917)
+
+regions <- c("V1", "V2", "V4", "IT")
+avgs <- qs_read(here(out_dir, "earlier_100.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+
+nonblank_idx <- stimuli$family != 0
+stimuli <- stimuli[nonblank_idx, ]
+
+pf_params <- expand.grid(
+  coherence = c(1, 2),
+  region = regions) 
+
+pf <- lapply(
+  cli_progress_along(1:nrow(pf_params)), 
+  function(i) {
+    coherence <- pf_params[i, "coherence"]
+    rgn <- pf_params[i, "region"]
+    
+    keep_idx <- (stimuli$coherence == coherence) 
+    fam_grps <- stimuli$family
+    
+    matched_sites <- here(out_dir, "split_corrs.csv") %>%
+      read.csv() %>%
+      filter(onset_type == "earlier", ms == 100, region == rgn) %>%
+      filter(corr > 0.1, corr < 0.5)
+    sites <- sample(matched_sites$site, 30)
+    
+    
+    dat <- avgs[[rgn]][nonblank_idx, sites]
+    
+    dM_pairwise(
+      dat = dat, 
+      grps = fam_grps, 
+      return_diff = F) %>%
+      mutate(
+        region = rgn,
+        coherence = ifelse(coherence == 1, "noisy", "natur")) }) %>%
+  do.call(rbind, .)
+
+qs_save(pf, here(out_dir, "earlier_100_pf.qs2"))
+```
+
+```{r}
+#| label: fig-family
+#| fig-cap: "Mahalanobis distances in pairwise family comparisons with earlier, shorter windows."
+#| fig-width: 4
+#| fig-height: 2.5
+here(out_dir, "earlier_100_pf.qs2") %>%
+  qs_read() %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = case_when(
+    coherence == "natur" ~ "Naturalistic", 
+    coherence == "noisy" ~ "Noisy")) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Between-family comparisons", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+```
+
+## Between-sample distances
+
+Unlike the previous results, the V1 results seem to be better than V4 and IT. V2 remains the "best" (@fig-sample).
+
+```{r, eval = F}
+source(here("R", "dM.R"))
+set.seed(20260917)
+
+regions <- c("V1", "V2", "V4", "IT")
+avgs <- qs_read(here(out_dir, "earlier_100.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+ps_params <- expand.grid(
+  family = unique(stimuli$family), 
+  coherence = c(1, 2),
+  region = regions) %>%
+  filter(family != 0) # remove blanks
+
+ps <- lapply(
+  cli_progress_along(1:nrow(ps_params)), 
+  function(i) {
+    fam <- ps_params[i, "family"]
+    coherence <- ps_params[i, "coherence"]
+    rgn <- ps_params[i, "region"]
+    
+    keep_idx <- (stimuli$coherence == coherence) & (stimuli$family == fam)
+    img_grps <- stimuli[keep_idx, "id"]
+    
+    matched_sites <- here(out_dir, "split_corrs.csv") %>%
+      read.csv() %>%
+      filter(onset_type == "earlier", ms == 100, region == rgn) %>%
+      filter(corr > 0.2, corr < 0.7)
+    sites <- sample(matched_sites$site, 20)
+    
+    dat <- avgs[[rgn]][keep_idx, sites]
+    
+    dM_pairwise(
+      dat = dat, 
+      grps = img_grps, 
+      return_diff = F) %>%
+      mutate(
+        region = rgn, 
+        family = fam, 
+        coherence = ifelse(coherence == 1, "noisy", "natur")) }) %>%
+  do.call(rbind, .)
+
+qs_save(ps, here(out_dir, "earlier_100_ps.qs2"))
+```
+
+## Between-sample comparisons
+
+```{r}
+#| label: fig-sample
+#| fig-cap: "Mahalanobis distances in pairwise sample comparisons with earlier, shorter windows."
+#| fig-width: 4
+#| fig-height: 2.5
+here(out_dir, "earlier_100_ps.qs2") %>%
+  qs_read() %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = case_when(
+    coherence == "natur" ~ "Naturalistic", 
+    coherence == "noisy" ~ "Noisy")) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Between-sample distances", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+```
+
+```{r, eval = F}
+ps %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(coherence == "natur") %>%
+  ggplot(aes(region, multi_d)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[8]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_wrap(vars(family)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Pairwise between-sample Mahalanobis distances (noisy)", 
+      fill = NULL) + 
+  theme(legend.position = "none", strip.text.x = element_blank())
+```
+
+## References
+
+::: {#refs}
+:::
