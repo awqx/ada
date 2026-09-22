@@ -1,0 +1,298 @@
+---
+title: "Comparison of randomized dichotomies and pairwise sample distances in between-sample comparisons"
+date: last-modified
+author: Al Xin
+date-format: MMM D, YYYY
+bibliography: ../../reports/refs.bib
+csl: ../../reports/nlm.csl
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+        \input{../../reports/statscmds.tex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260909"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+data_dir <- here("data", "processed", "20260625")
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+```{r}
+stimuli <- read.csv(here("data", "processed", "20260625", "stimuli.csv"))
+```
+
+## Shrinkage covariance estimator
+
+The standard multivariate covariance estimator cannot be applied in the Mahalanobis distance calculation because the number of repetitions (6 for each image) is lower than the number of sites typically used to evaluate separation. 
+
+However, one can apply a shrinkage approach, described in Schafer and Strimmer [@schafer_shrinkage_2005] and based on a lemma proposed by Ledoit and Wolf [@ledoit_improved_2003]. This approach is implemented in the R package `corpcor`. Furthermore, `corpcor` handily provides `invcov.shrink()`, which directly calculates $\boldsymbol{\Sigma}^{-1}$ rather than estimating then inverting $\boldsymbol{\Sigma}$ [@schafer_corpcor_2021]. 
+
+Briefly, let $\boldsymbol{\psi} = (\psi_1, \dots, \psi_p)$ be the parameters of an unrestricted high-dimensional model of interest and let $\boldsymbol{\theta}$ be the parameters of a lower dimensional restricted sub-model. e.g., $\boldsymbol{\psi}$ is the mean vector of a multivariate Normal and $\boldsymbol{\theta}$ is the vector of a contrained submodel where the means are all assumed to be equal. Then, the linear shrinkage approach finds the new estimator
+$$
+\boldsymbol{\psi}^* = \lambda \hat{\boldsymbol{\theta}} + (1 - \lambda) \hat{\boldsymbol{\psi}} : \lambda \in [0, 1]
+$$
+where the optimal value $\lambda^*$ can be found analytically by optimizing 
+$$
+\lambda^* = 
+\frac
+{\sum_{i = 1}^p \left( \var (\hat\psi_i) - \cov (\hat\theta_i, \hat\psi_i) \right)}
+{\sum_{i = 1}^p \E [(\hat\theta_i - \hat\psi_i)^2]}
+$$
+
+In the `corpcor` implementation, the shrinkage target (i.e., the parameters of the constrained model) is taken as a diagonal covariance matrix whose diagonal entries may be unequal, which shrinks the off-diagonal elements of the estimated covariance matrix [@schafer_shrinkage_2005]. This also produces a positive definite covariance estimate, as a convex combination of a positive definite matrix and positive semidefinite matrix yields a positive definite matrix. 
+
+## Pairwise samples compared with randomized dichotomies
+
+Pairwise sample comparisons are done separately for each family. For consistency, I'll use the same sites in the last notebook (`20260826`). 
+
+Visually, the distributions between the pairwise sample comparisons and the randomized dichotomies look similar, though the magnitudes of the distances are affected by the different number of samples (@fig-rd_vs_ps). The orderings on family-separated results are also similar (these plots are saved but not rendered here). When plotting the within-family averages and standard deviations against each other (@fig-rd_vs_ps_corr), the correlations tend to be good for within-family averages and worse for within-family standard deviations (@tbl-rd_vs_ps).
+
+To make this more rigorous, one could test for similarity between the relative rankings of region performance with a post hoc test. However, this is probably overkill for now. 
+
+I am fairly unworried about big differences between the results from the pairwise sample distances and the randomized dichotomies. Subsequent analyses will be performed on the pairwise sample distances, which will save time (and memory).
+
+```{r, eval = F}
+source(here("R", "dM.R"))
+
+regions <- c("V1", "V2", "V4", "IT")
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+ps_params <- expand.grid(
+  family = unique(stimuli$family), 
+  coherence = c(1, 2),
+  region = regions) %>%
+  filter(family != 0) # remove blanks
+sites <- here("data", "processed", "20260826", "dM_rd", "site_corr.csv") %>%
+  read.csv()
+sites <- lapply(
+  regions, 
+  function(rgn) sites %>% filter(region == rgn) %>% .$site )
+
+ps <- lapply(
+  cli_progress_along(1:nrow(ps_params)), 
+  function(i) {
+    fam <- ps_params[i, "family"]
+    coherence <- ps_params[i, "coherence"]
+    rgn <- ps_params[i, "region"]
+    
+    keep_idx <- (stimuli$coherence == coherence) & (stimuli$family == fam)
+    img_grps <- stimuli[keep_idx, "id"]
+    dat <- avgs[[rgn]][keep_idx, sites[[rgn]]]
+    
+    dM_pairwise(
+      dat = dat, 
+      grps = img_grps, 
+      return_diff = F) %>%
+      mutate(
+        region = rgn, 
+        family = fam, 
+        coherence = ifelse(coherence == 1, "noisy", "natur")) }) %>%
+  do.call(rbind, .)
+```
+
+```{r, eval = F}
+if (!dir.exists(here(out_dir, "dM_ps"))) dir.create(here(out_dir, "dM_ps"))
+qs_save(ps, here(out_dir, "dM_ps", "dM.qs2"))
+```
+
+```{r}
+#| label: fig-rd_vs_ps
+#| fig-cap: "Violin plots comparing the distributions of Mahalanobis distances for the randomized dichotomies approach (top) and the pairwise between-sample distances found with the Ledoit-Wolf shrinkage estimator."
+#| fig-width: 4
+#| fig-height: 4
+regions <- c("V1", "V2", "V4", "IT")
+rbind(
+  qs_read(here("data", "processed", "20260826", "dM_rd", "dM.qs2")) %>%
+    filter(cov_est == "shrinkage") %>%
+    select(multi_d, coherence, region, family) %>%
+    mutate(method = "Randomized dichotomies"), 
+  qs_read(here("data", "processed", "20260909", "dM_ps", "dM.qs2")) %>%
+    select(multi_d, coherence, region, family) %>%
+    mutate(method = "Shrinkage covariance")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = case_when(
+    coherence == "natur" ~ "Naturalistic", 
+    coherence == "noisy" ~ "Noisy")) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence), rows = vars(method), scales = "free_y") + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Matched reliability between-sample distances", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+```
+
+```{r, message = F}
+#| label: fig-rd_vs_ps_corr
+#| fig-cap: "Comparison of summary statistics of the distances found with pairwise sample distances and randomized dichotomies. Means and standard deviations are calculated within each texture family. The within-family means tend to show more correlation across all regions. The correlation between the pairwise sample and randomized dichotomies standard deviations is worse in IT than other regions."
+#| fig-width: 4
+#| fig-height: 4.5
+library(patchwork)
+dM_vs <- rbind(
+  qs_read(here("data", "processed", "20260826", "dM_rd", "dM.qs2")) %>%
+    filter(cov_est == "shrinkage") %>%
+    select(multi_d, coherence, region, family) %>%
+    mutate(method = "rd"), 
+  qs_read(here("data", "processed", "20260909", "dM_ps", "dM.qs2")) %>%
+    select(multi_d, coherence, region, family) %>%
+    mutate(method = "ps")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = case_when(
+    coherence == "natur" ~ "Naturalistic", 
+    coherence == "noisy" ~ "Noisy")) %>%
+  group_by(coherence, region, family, method) %>% 
+  summarize(fam_avg = mean(multi_d), fam_sd = sd(multi_d), .groups = "drop") 
+
+p_dM_vs_avg <- dM_vs %>%
+  select(-fam_sd) %>%
+  pivot_wider(names_from = method, values_from = fam_avg) %>%
+  mutate(summary_stat = "Within-family means") %>%
+  ggplot(aes(x = rd, y = ps, color = region)) + 
+    facet_grid(cols = vars(coherence), rows = vars(summary_stat), scales = "free") + 
+    geom_smooth(method = "lm", se = F, alpha = 0.4) + 
+    geom_point(alpha = 0.8) + 
+    labs(
+      x = NULL,
+      y = "Pairwise sample distances", 
+      color = "Region") + 
+  theme(legend.position = "top")
+
+p_dM_vs_sd <- dM_vs %>%
+  select(-fam_avg) %>%
+  pivot_wider(names_from = method, values_from = fam_sd) %>%
+  mutate(summary_stat = "Within-family SD") %>%
+  ggplot(aes(x = rd, y = ps, color = region)) + 
+    facet_grid(cols = vars(coherence), rows = vars(summary_stat), scales = "free") + 
+    geom_smooth(method = "lm", se = F, alpha = 0.4) + 
+    geom_point(alpha = 0.8) + 
+    labs(
+      x = "Randomized dichotomies", 
+      y = "Pairwise sample distances",
+      color = "Region") + 
+  theme(legend.position = "none", strip.text.x = element_blank())
+
+p_dM_vs_avg + p_dM_vs_sd + plot_layout(ncol = 1)
+```
+
+```{r, eval = F}
+p_ps_fam_natur <- qs_read(here(out_dir, "dM_ps", "dM.qs2")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(coherence == "natur") %>%
+  ggplot(aes(region, multi_d)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[3]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_wrap(vars(family)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Pairwise between-sample Mahalanobis distances (naturalistic)", 
+      fill = NULL) + 
+  theme(legend.position = "none", strip.text.x = element_blank())
+
+p_ps_fam_noisy <- qs_read(here(out_dir, "dM_ps", "dM.qs2")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(coherence == "noisy") %>%
+  ggplot(aes(region, multi_d)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[8]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_wrap(vars(family)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Pairwise between-sample Mahalanobis distances (noisy)", 
+      fill = NULL) + 
+  theme(legend.position = "none", strip.text.x = element_blank())
+
+ggsave(here(res_dir, "dM_ps_family_natur.png"), p_ps_fam_natur, width = 8, height = 8, dpi = 600)
+ggsave(here(res_dir, "dM_ps_family_noisy.png"), p_ps_fam_noisy, width = 8, height = 8, dpi = 600)
+```
+
+
+```{r}
+#| label: tbl-rd_vs_ps
+#| tbl-cap: "The correlations between family-wise summary statistics of mean and standard deviation for each region and in naturalistic or noisy families. The correlations of family-wise means tends to be high for both types of texture families. Correlations in within-family SD tend to drop in noisy families."
+library(gt)
+dM_vs_corr <- rbind(
+  qs_read(here("data", "processed", "20260826", "dM_rd", "dM.qs2")) %>%
+    filter(cov_est == "shrinkage") %>%
+    select(multi_d, coherence, region, family) %>%
+    mutate(method = "rd"), 
+  qs_read(here("data", "processed", "20260909", "dM_ps", "dM.qs2")) %>%
+    select(multi_d, coherence, region, family) %>%
+    mutate(method = "ps")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  group_by(coherence, region, method, family) %>% 
+  summarize(fam_avg = mean(multi_d), fam_sd = sd(multi_d), .groups = "drop_last") %>% 
+  pivot_wider(names_from = method, values_from = c(fam_avg, fam_sd)) %>%
+  summarize(
+    corr_avg = cor(fam_avg_rd, fam_avg_ps), 
+    corr_sd = cor(fam_sd_rd, fam_sd_ps), 
+    .groups = "drop_last")
+
+dM_vs_corr %>% 
+  pivot_wider(
+    names_from = coherence, 
+    values_from = c(corr_avg, corr_sd)) %>%
+  gt() %>%
+  tab_spanner(
+    label = "Naturalistic", 
+    columns = c(corr_avg_natur, corr_sd_natur)) %>%
+  tab_spanner(
+    label = "Noisy", 
+    columns = c(corr_avg_noisy, corr_sd_noisy)) %>%
+  fmt_number(decimals = 3) %>%
+  cols_label(
+    region = "Region",
+    corr_avg_natur = "Corr(Means)", 
+    corr_avg_noisy = "Corr(Means)", 
+    corr_sd_natur = "Corr(SD)", 
+    corr_sd_noisy = "Corr(SD)") %>% 
+  opt_table_font(size = "11px")
+  # data_color(
+  #   method = "numeric", 
+  #   domain = c(0, 1),
+  #   palette = c("firebrick", "white", "#1a9850"), 
+  #   na_color = "black") %>% 
+```
+
+
+## References
+
+::: {#refs}
+:::
