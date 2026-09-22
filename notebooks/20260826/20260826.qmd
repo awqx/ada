@@ -1,0 +1,857 @@
+---
+title: "Matched-reliability Mahalanobis distance comparisons"
+date: last-modified
+author: Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260826"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+t2_dir <- here("data", "raw", "6reps") 
+data_dir <- here("data", "processed", "20260625")
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Data
+
+### Stimulus details
+
+The stimulus labels are: 
+
+- `coherence`: `0` when blank, `1` when noisy, `2` when naturalistic. 
+- `family`: `0` when blank, two or three digit integer code otherwise.
+- `id`: `0` when blank, integer from `1` to `15` otherwise. 
+- `coherence_t3`: special column for coding coherence in `textures3` (can be ignored)
+- `block_order`: the relative position of the stimulus in the block of 8 image (can be ignored)
+- `repetition`: integer from `1` to `100` if blank, `1` to `6` otherwise. 
+
+For the final column, when coherence is not zero (non-blank images), the column contains values 1 through 6 corresponding to the repetition number.
+
+For blank images, the final column takes on values 1 through 100, repeating 6 times. Previously, I grouped all blank stimuli together. However, when prepping data for general use, the blank repetitions need to be treated more carefully. E.g., permutation testing might require only permuting within blocked repetitions. For non-blank images, the `repetition` label is ordered according to when the images were presented. For blank images, the rows remain ordered chronologically. 
+
+```{r}
+# get arbitrary identical stimulus labels
+stims_ref <- list.files(here("data", "raw", "6reps")) %>%
+  .[1] %>% # arbitrary index
+  file.path(t2_dir, .) %>%
+  R.matlab::readMat() %>%
+  .$save.label %>%
+  data.frame() %>%
+  rename(
+    coherence = 1, 
+    family = 2, 
+    id = 3, 
+    coherence_t3 = 4, 
+    block_order = 5, 
+    repetition = 6) %>% 
+  select(-coherence_t3, -block_order)
+
+stimuli <- stims_ref %>%
+  mutate(id_blank = replace_when(repetition, coherence != 0 ~ 0)) %>%
+  group_by(id_blank) %>%
+  mutate(rep_blank = row_number()) %>%
+  mutate(repetition = replace_when(repetition, coherence == 0 ~ rep_blank)) %>%
+  mutate(id = replace_when(id, coherence == 0 ~ id_blank)) %>%
+  ungroup() %>%
+  select(-id_blank, -rep_blank)
+
+write.csv(stimuli, here(out_dir, "stimuli.csv"), row.names = F)
+```
+
+```{r}
+stimuli <- read.csv(here(out_dir, "stimuli.csv"))
+regions <- c("V1", "V2", "V4", "IT")
+```
+
+## Onset times
+
+The criteria for onset time identification is somewhat strict, requiring that the $d'$ between non-blank and blank images exceeds a magnitude of 0.4 for three consecutive windows (keeping the sign consistent). IT has the lowest proportion of sites with valid onset times. In general, onset times seem to get longer with higher visual areas (see @fig-onsets_all). 
+
+```{r, eval = F}
+# Temporary onsets
+library(cli)
+source(here("R", "onset_time.R"))
+
+onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+onsets_all <- lapply(
+  cli_progress_along(regions), 
+  function(i) {
+    region <- regions[i]
+    mua <- qs_read(here(data_dir, paste0(region, ".qs2")))
+    onset_time(mua[, 50:70, ], onset_grp, all_times = T)})
+names(onsets_all) <- regions
+saveRDS(onsets_all, file.path(out_dir, "onsets_all.RDS"))
+```
+
+```{r}
+#| label: fig-onsets_all
+#| fig-cap: "(Left) The number of sites with a calculated onset time given the d' criteria, sorted by region. (Center) The proportion of sites in each region with a calculated onset time. IT has both the lowest absolute number and lowest proportion of valid onset times. (Right) Histograms of the calculated onset times per region, with normalized bar heights."
+#| fig-width: 5.5
+#| fig-height: 2.5
+library(patchwork)
+onsets_all <- readRDS(here(out_dir, "onsets_all.RDS")) 
+onsets_df <- lapply(
+  names(onsets_all), 
+  function(region) 
+    data.frame(region = region, onset = onsets_all[[region]])) %>%
+  do.call(rbind, .) %>%
+  mutate(no_onset = ifelse(is.na(onset), "Missing", "Found")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(no_onset = factor(no_onset, levels = c("Found", "Missing")))
+p_onsets_1 <- ggplot(onsets_df %>% filter(no_onset == "Found"), aes(x = region)) + 
+  geom_bar(fill = palette.colors()[3]) + 
+  labs(y = "Count", x = NULL) + 
+  theme(panel.grid.major.x = element_blank())
+p_onsets_2 <- ggplot(onsets_df, aes(x = region, fill = no_onset)) + 
+  geom_bar(position = "fill") + 
+  labs(fill = "Onset", y = "Proportion", x = NULL) +
+  scale_fill_discrete(palette = c(palette.colors()[3], "gray90")) + 
+  theme(axis.text.y = element_blank(), panel.grid.major = element_blank())
+p_onsets_3 <- onsets_df %>%
+  filter(no_onset == "Found") %>% 
+  mutate(onset = onset * 10) %>%
+  ggplot(aes(x = onset, y = ..ncount..)) + 
+    geom_histogram(bins = 12, fill = palette.colors()[2]) + 
+    facet_wrap(vars(region), nrow = 2) + 
+    labs(x = "Inferred onset (ms)", y = NULL) +
+    theme(axis.text.y = element_blank(), panel.grid = element_blank()) + 
+    scale_x_continuous(breaks = 50 * 1:4)
+p_onsets <- p_onsets_1 + p_onsets_2 + p_onsets_3 + 
+  plot_layout(widths = c(1, 1, 2), ncol = 3)
+p_onsets
+```
+
+```{r, eval = F}
+ggsave(here(res_dir, "onsets_all-wide.png"), p_onsets, width = 5.5, height = 2.5, dpi = 600)
+p_onsets_2 <- p_onsets_2 + theme(legend.position = "top")
+p_onsets <- (p_onsets_1 | p_onsets_2) / p_onsets_3
+ggsave(here(res_dir, "onsets_all-tall.png"), p_onsets, width = 4, height = 5.5, dpi = 600)
+```
+
+The effect of onset time calculation (e.g., modifying it to be calculated only on naturalistic images) is likely a question for another day. 
+
+## Pre-computing splits
+
+There are 20 possible ways to split the 6 repetitions into two groups. For some analyses, I found it a bit easier to front-load computations and memory usage and pre-calculate the averages (taken over sample images) per each of the 20 possible splits. 
+
+(This is actually probably not that useful but will be kept in `/scratch` in the `levi2.stat.cmu.edu` server). 
+
+```{r}
+library(qs2)
+#' Split-half averaging
+#'
+#' Split observations into two groups then take group averages within each split
+#'
+#' @param channel the MUA readings for one channel
+#' @param avg_grp the group labels for observations to average over
+#' @param split_grp the group labels for splitting
+#'
+#' @return num Pearson correlation
+
+split_half_avg <- function(channel, avg_grp, split_grp) {
+  channel %>%
+    data.frame() %>%
+    mutate(avg_grp = avg_grp, split_grp = split_grp) %>%
+    group_by(split_grp) %>%
+    group_split(.keep = F) %>%
+    lapply(., function(df)
+      df %>%
+        group_by(avg_grp) %>%
+        summarize(across(where(is.numeric), mean)) %>%
+        select(-avg_grp) %>%
+        data.matrix())
+}
+
+stimuli <- read.csv(here(out_dir, "stimuli.csv"))
+stimuli %>%
+  group_by(coherence, family, id) %>%
+  mutate(grp = cur_group_id()) %>%
+  select(-repetition) %>% 
+  unique() %>% 
+  write.csv(here(out_dir, "stimuli_grp.csv"), row.names = F)
+```
+
+## Split-half correlation calculation
+
+The function `split_half_corr()` in `R/responsive_sites.R` needs a small modification to work with pre-computed splits. Otherwise, the procedure proceeds as usual. Split-half correlation calculation can be somewhat stabilized by first aggregating the observations. Gerrick originally averaged over families and coherence, but this creates some selection bias for sites that are responsive at the family level. For our purposes, averaging only over sample images would be more reasonable. 
+
+The observations are first split into two arbitrary groups of 3 repetitions each. The rows are then averaged by the appropriate grouping (family or sample image) and over a 150 ms window after the temporary onset time calculated previously. The correlation is then calculated over the two resulting vectors. For example, for aggregating over sample images produces two vectors of length 1150 each (1050 sample images + 100 blank images). The blanks can be averaged to produce a vector of length 1051; I tested approaches with 100 separated blank groups, 1 aggregated blank group, and 0 blank groups (blanks entirely omitted). 
+
+I tested correlations over all $\binom{6}{3} = 20$ splitting possibilities. The per-site averages are shown as histograms in @fig-split_corrs. The handling of the blank images does not produce a large difference in the observed correlations, so I will default to the single aggregated blank group. 
+
+See @fig-corrs_ecdf for empirical CDFs for the split-half correlations. Aggregating within family (Gerick's method) or by sample image (our approach) produces very different distributions. For within-family aggregation, the split-half correlations tend to be much higher, with V1, V2, and V4 showing a sharp upturn in the eCDF at around $\rho \approx 0.8$. 
+
+```{r, eval = F}
+stimuli_grp <- read.csv(here(out_dir, "stimuli_grp.csv"))
+
+# helper for only calculating the columnwise correlations
+diag_corr <- function(x1, x2) {
+  colSums(scale(x1) * scale(x2)) / (nrow(x1) - 1)
+}
+
+onsets <- readRDS(file.path(out_dir, "onsets_all.RDS"))
+l_window <- 15
+stim_idx <- 50
+
+splits_corr <- function(splits, avg_grp, onset, incl_idx = NULL) {
+  if (!is.null(incl_idx)) {
+    splits <- lapply(splits, function(x) x[incl_idx, , ])
+    avg_grp <- avg_grp[incl_idx]
+  }
+    
+  res <- lapply(splits, function(split) {
+    apply(split[, onset:(onset + l_window - 1) + stim_idx - 1, ], c(1, 3), mean) %>%
+      data.frame() %>%
+      mutate(avg_grp = avg_grp) %>%
+      group_by(avg_grp) %>%
+        summarize(across(where(is.numeric), mean)) %>%
+        select(-avg_grp) %>%
+        data.matrix() })
+  diag_corr(res[[1]], res[[2]])
+}
+```  
+
+```{r, eval = F}
+grp_type <- c("img", "fam")
+n_blanks <- c(0, 1, 100)
+corr_nms <- expand.grid(grp_type, n_blanks)
+regions <- c("V1", "V2", "V4", "IT")
+
+i <- 1
+region <- regions[1]
+f_nm <- paste0(corr_nms[i, 1], "_blank", sprintf("%03d", corr_nms[i, 2]), ".csv")
+if (file.exists(here(out_dir, "split_corrs", region, f_nm))) 
+  corrs <- read.csv(here(out_dir, "split_corrs", region, f_nm)) %>%
+    apply(1, mean)
+  corrs <- data.frame(site = 1:length(corrs), corr = corrs)
+  
+corrs <- lapply(
+  regions, 
+  function(region) {
+    lapply(
+      1:nrow(corr_nms), 
+      function(i) {
+        grp_type <- corr_nms[i, 1]
+        n_blanks <- corr_nms[i, 2]
+        f_nm <- paste0(grp_type, "_blank", sprintf("%03d", n_blanks), ".csv")
+        if (file.exists(here(out_dir, "split_corrs", region, f_nm))) {
+            corrs <- read.csv(here(out_dir, "split_corrs", region, f_nm)) %>%
+              apply(1, mean)
+            corrs <- data.frame(
+              site = 1:length(corrs), 
+              corr = corrs, 
+              grp_type = grp_type, 
+              n_blanks = n_blanks)
+          return(corrs)
+        } else { return(NULL) }}) %>%
+      do.call(rbind, .) %>%
+      mutate(region = region) }) %>%
+  do.call(rbind, .)
+write.csv(corrs, here(res_dir, "split_corrs.csv"), row.names = F)
+```
+
+```{r}
+#| label: fig-split_corrs
+#| fig-cap: "Normalized histograms of the split-half correlations calculated for each site, averaged across the 20 possible splits. The rows indicate the handling of blank images included in the vectors used for the split-half correlation calculation, with blanks either omitted entirely, aggregated over all repetitions, or separated into 100 instances of 6 repetitions each. Dashed lines mark the median. The distribution of correlations for V1 and IT are more right-shewed. Differences between the number of blank images are slight, though in general, the median correlation is lowest when including separated blank images (with the exception of IT)."
+#| fig-width: 5
+#| fig-height: 3.5
+corrs <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(n_blanks = case_when(
+    n_blanks == 0 ~ "Omitted", 
+    n_blanks == 1 ~ "Aggregated", 
+    n_blanks == 100 ~ "Separated")) %>%
+  mutate(n_blanks = factor(n_blanks, levels = c("Separated", "Aggregated", "Omitted")))
+corrs_summary <- corrs %>%
+  group_by(region, grp_type, n_blanks) %>%
+  summarize(corr = median(corr), .groups = "drop_last")
+
+p_corrs_fam <- ggplot(corrs %>% filter(grp_type == "fam"), aes(x = corr)) + 
+  geom_histogram(aes(y = ..ncount..), bins = 15, fill = palette.colors()[3]) + 
+  geom_vline(
+    data = corrs_summary %>% filter(grp_type == "fam"), 
+    aes(xintercept = corr), linetype = "dotted") + 
+  facet_grid(rows = vars(n_blanks), cols = vars(region)) +
+  labs(y = NULL, x = "Split-half correlation") + 
+  theme(axis.text.y = element_blank(), panel.grid = element_blank())
+
+p_corrs_img <- ggplot(corrs %>% filter(grp_type == "img"), aes(x = corr)) + 
+  geom_histogram(aes(y = ..ncount..), bins = 15, fill = palette.colors()[3]) + 
+  geom_vline(
+    data = corrs_summary %>% filter(grp_type == "img"), 
+    aes(xintercept = corr), linetype = "dotted") + 
+  facet_grid(rows = vars(n_blanks), cols = vars(region)) +
+  labs(y = NULL, x = "Split-half correlation") + 
+  theme(axis.text.y = element_blank(), panel.grid = element_blank())
+
+p_corrs_img
+```
+
+```{r}
+#| label: fig-corrs_ecdf
+#| fig-cap: "Empirical cumulative distribution functions for the split-half correlations by region. Data reflects split-half correlations performed when all blanks are averaged. (Left) Aggregated by sample image. (Right) Aggregated by family. For non-IT regions, the correlations tend to concentrate at above 0.8."
+#| fig-width: 4
+#| fig-height: 2.5
+
+# p_ecdf <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+#   mutate(region = factor(region, levels = regions)) %>%
+#   filter(grp_type == "img", n_blanks == 1) %>%
+#   ggplot(aes(x = corr, color = region)) + 
+#   stat_ecdf() + 
+#   labs(x = "Correlation", y = "Empirical cumulative probability", color = "Region")
+
+p_ecdf <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(n_blanks == 1) %>%
+  mutate(
+    grp_label = case_when(
+      grp_type == "fam" ~ "Within family", 
+      grp_type == "img" ~ "By image")) %>%
+  ggplot(aes(x = corr, color = region)) + 
+    stat_ecdf() + 
+    facet_wrap(vars(grp_label), ncol = 2) + 
+    labs(
+      x = "Correlation", 
+      y = "Empirical cumulative probability", 
+      color = "Region")
+
+p_ecdf
+# ggsave(here(res_dir, "split_corrs_ecdf.png"), width = 3.5, height = 3, dpi = 600)
+```
+
+## Onset times on reliable sites
+
+As a reminder, the onsets in @fig-onsets_all (which informed the averaging in @fig-split_corrs) were taken over all sites. We can sanity check if the onset times change based on the reliable site calculation. Overall, I think it makes sense to retain the temporary onset times unless there's evidence that it changes a lot (more than 30 ms). 
+
+Taking sites above a split-half correlation of 0.4 or taking sites in the 80th percentile of correlations doesn't move the onset time much, though it gets very slightly earlier in V2 for the percentile cutoff. 
+
+Thus, I'll use the averages calculated according to the temporary onset times. 
+
+```{r, eval = F}
+library(cli)
+source(here("R", "onset_time.R"))
+
+corr_threshold <- 0.4
+regions <- c("V1", "V2", "V4", "IT")
+stimuli <- read.csv(here(out_dir, "stimuli.csv"))
+
+thresh_sites <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(grp_type == "img", n_blanks == 1) %>%
+  mutate(incl = corr > corr_threshold)
+thresh_sites <- lapply(regions, 
+  function(rgn) thresh_sites %>% filter(region == rgn) %>% .$incl)
+
+prcnt_sites <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(grp_type == "img", n_blanks == 1) %>%
+  group_by(region) %>%
+  mutate(prcnt = percent_rank(corr)) %>%
+  mutate(incl = prcnt > 0.8)
+prcnt_sites <- lapply(regions, 
+  function(rgn) prcnt_sites %>% filter(region == rgn) %>% .$incl)
+
+onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+onsets_corr_thresh <- lapply(
+  cli_progress_along(regions), 
+  function(i) {
+    region <- regions[i]
+    mua <- qs_read(here(data_dir, paste0(region, ".qs2")))
+    onset_time(mua[, 50:70, thresh_sites[[i]]], onset_grp, all_times = T)})
+names(onsets_corr_thresh) <- regions
+
+onsets_corr_prcnt <- lapply(
+  cli_progress_along(regions), 
+  function(i) {
+    region <- regions[i]
+    mua <- qs_read(here(data_dir, paste0(region, ".qs2")))
+    onset_time(mua[, 50:70, prcnt_sites[[i]]], onset_grp, all_times = T)})
+names(onsets_corr_prcnt) <- regions
+
+saveRDS(onsets_corr_prcnt, file.path(out_dir, "onsets_corr_prcnt.RDS"))
+
+list(onsets_all, onsets_corr_thresh, onsets_corr_prcnt) %>% 
+  lapply(function(x) 10 * (sapply(x, median, na.rm = T) - 1)) %>% 
+  do.call(cbind, .)
+```
+
+## Pairwise between-family Mahalanobis distance
+
+For now, let's take a somewhat arbitrary "matched-reliability" criteria of sites with split-half correlation between 0.3 and 0.6. This yields 39 sites in V1, 49 sites in V2, 57 sites in V4, and 53 sites in IT. I chose this criteria because the slopes of the lines in @fig-corrs_ecdf look fairly similar within this window. 
+
+@fig-dM_dist shows the results from a single arbitrary subsample of 30 sites from each region alongside the split-half correlations for each site for reference. @fig-dM_grp compares the results with a single subsample when reliable sites are selected based on the split-half correlations obtained when aggregating over family. When reliability is calculated after grouping by family, the distances in IT look like they might be lower than V4, breaking the trend seen when grouping by image.
+
+However, for family-wise aggregation, it's difficult to find an interval where the eCDFs of the site split-half correlations are similar between regions, so the distribution of the split-half correlations used in the calculations look very skewed for V1, V2, and V4. 
+
+```{r, eval = F}
+read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(grp_type == "img", n_blanks == 1) %>%
+  mutate(matched = corr > 0.3 & corr < 0.6) %>%
+  group_by(region) %>% 
+  summarize(n_sites = sum(matched))
+
+read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(grp_type == "fam", n_blanks == 1) %>%
+  mutate(matched = corr > 0.6 & corr < 0.95) %>%
+  group_by(region) %>% 
+  summarize(n_sites = sum(matched))
+```
+
+```{r}
+pairwise_multi_d <- function(dat, shrink = T, return_diff = T) {
+  multi_d_list <- lapply(
+    cli_progress_along(family_pairs),
+    function(i) {
+      grp_ids <- family_pairs[[i]]
+      idx <- stimuli$family %in% grp_ids
+
+      multi_d(
+        dat = dat[idx, ],
+        grps = stimuli$family[idx],
+        shrink = shrink,
+        return_diff = return_diff)})
+
+  if (return_diff) {
+    multi_d_df <- data.frame(
+      multi_d = sapply(multi_d_list, function(x) x[["multi_d"]]),
+      grps = sapply(family_pairs, function(x) paste0(x, collapse = "vs")))
+    
+    mu_diff <- lapply(multi_d_list, function(x) x[["mu_diff"]]) %>%
+      do.call(rbind, .)
+    return(list(
+      multi_d = multi_d_df,
+      mu_diff = mu_diff
+    ))
+  } else {
+    multi_d_df <- data.frame(
+      multi_d = unlist(multi_d_list), 
+      grps = sapply(family_pairs, function(x) paste0(x, collapse = "vs")))
+    return(multi_d_df)}
+}
+
+multi_d <- function(dat, grps, shrink = F, return_diff = T) {
+  grps <- as.numeric(as.factor(grps))
+  mu_1 <- colMeans(dat[grps == 1, ])
+  mu_2 <- colMeans(dat[grps == 2, ])
+  mu_diff <- mu_2 - mu_1
+
+  if (shrink) {
+    inv_cov <- rbind(
+      sweep(dat[grps == 1, ], 2, mu_1, FUN = "-"),
+      sweep(dat[grps == 2, ], 2, mu_2, FUN = "-")) %>%
+      corpcor::invcov.shrink(verbose = F)
+  } else {
+    inv_cov <- Rfast::spdinv(pooled.cov(dat, ina = grps)) }
+  multi_d <- sqrt(t(mu_diff) %*% inv_cov %*% (mu_diff))
+
+  if (return_diff) {
+    return(list(multi_d = multi_d, mu_diff = mu_diff, combvar = diag(inv_cov)))
+  } else {
+    return(multi_d)
+  }
+}
+```
+
+```{r, eval = F}
+set.seed(20260826)
+regions <- c("V1", "V2", "V4", "IT")
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+
+# limit to naturalistic stimuli
+natur_idx <- stimuli$coherence == 2
+avgs <- lapply(regions,
+  function(x) avgs[[x]][natur_idx, ])
+names(avgs) <- regions
+stimuli <- stimuli[natur_idx, ]
+family_pairs <- combn(unique(stimuli$family), 2, simplify = F)
+
+natur_list <- lapply(
+  regions, 
+  function(rgn) {
+      dat <- avgs[[rgn]]
+      matched_sites <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+        filter(grp_type == "img", n_blanks == 1, region == rgn) %>%
+        filter(corr > 0.3, corr < 0.6)
+      sites <- sample(matched_sites$site, 30)
+      dat <- dat[, sites]
+    
+      res <- pairwise_multi_d(dat, shrink = T, return_diff = F) %>%
+        mutate(region = rgn)
+      sites <- data.frame(
+        region = rgn,
+        site = sites, 
+        corr = matched_sites %>% filter(site %in% sites) %>% .$corr)
+      return(list(res, sites))
+})
+dM_natur <- lapply(natur_list, "[[", 1) %>% do.call(rbind, .)
+dM_natur_sites <- lapply(natur_list, "[[", 2) %>% do.call(rbind, .)
+
+
+if (!dir.exists(here(out_dir, "dM_pf"))) dir.create(here(out_dir, "dM_pf"))
+write.csv(dM_natur, here(out_dir, "dM_pf", "natur.csv"), row.names = F)
+write.csv(dM_natur_sites, here(out_dir, "dM_pf", "site_corr.csv"), row.names = F)
+```
+
+```{r, eval = F}
+set.seed(20260908)
+regions <- c("V1", "V2", "V4", "IT")
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+
+# limit to naturalistic stimuli
+natur_idx <- stimuli$coherence == 2
+avgs <- lapply(regions,
+  function(x) avgs[[x]][natur_idx, ])
+names(avgs) <- regions
+stimuli <- stimuli[natur_idx, ]
+
+byfam_list <- lapply(
+  regions, 
+  function(rgn) {
+      dat <- avgs[[rgn]]
+      matched_sites <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+        filter(grp_type == "fam", n_blanks == 1, region == rgn) %>%
+        filter(corr > 0.6, corr < 0.95)
+      sites <- sample(matched_sites$site, 30)
+      dat <- dat[, sites]
+    
+      res <- pairwise_multi_d(dat, shrink = T, return_diff = F) %>%
+        mutate(region = rgn)
+      sites <- data.frame(
+        region = rgn,
+        site = sites, 
+        corr = matched_sites %>% filter(site %in% sites) %>% .$corr)
+      return(list(res, sites))
+})
+dM_byfam <- lapply(byfam_list, "[[", 1) %>% do.call(rbind, .)
+dM_byfam_sites <- lapply(byfam_list, "[[", 2) %>% do.call(rbind, .)
+
+
+if (!dir.exists(here(out_dir, "dM_pf"))) dir.create(here(out_dir, "dM_pf"))
+write.csv(dM_byfam, here(out_dir, "dM_pf", "byfam.csv"), row.names = F)
+write.csv(dM_byfam_sites, here(out_dir, "dM_pf", "byfam_site_corr.csv"), row.names = F)
+```
+
+```{r, eval = F}
+# this will not work now due to the files only existing on the Stats servers
+set.seed(20260826)
+regions <- c("V1", "V2", "V4", "IT")
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+
+# limit to naturalistic stimuli
+noisy_idx <- stimuli$coherence == 1
+avgs <- lapply(regions,
+  function(x) avgs[[x]][noisy_idx, ])
+names(avgs) <- regions
+
+stimuli <- stimuli[noisy_idx, ]
+
+family_pairs <- combn(unique(stimuli$family), 2, simplify = F)
+# family_pairs <- family_pairs[1:10]
+
+noisy_list <- lapply(
+  regions, 
+  function(rgn) {
+      dat <- avgs[[rgn]]
+      matched_sites <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+        filter(grp_type == "img", n_blanks == 1, region == rgn) %>%
+        filter(corr > 0.3, corr < 0.6)
+      sites <- sample(matched_sites$site, 30)
+      dat <- dat[, sites]
+    
+      res <- pairwise_multi_d(dat, shrink = T, return_diff = F) %>%
+        mutate(region = rgn)
+      sites <- data.frame(
+        region = rgn,
+        site = sites, 
+        corr = matched_sites %>% filter(site %in% sites) %>% .$corr)
+      return(list(res, sites))
+})
+dM_noisy <- lapply(noisy_list, "[[", 1) %>% do.call(rbind, .)
+dM_noisy_sites <- lapply(noisy_list, "[[", 2) %>% do.call(rbind, .)
+
+write.csv(dM_noisy, here(out_dir, "dM_pf", "noisy.csv"), row.names = F)
+# identical to natur_site_corr
+# write.csv(dM_noisy_sites, here(out_dir, "dM_pf", "noisy_site_corr.csv"), row.names = F)
+```
+
+```{r, eval = F}
+# reprocessing some stuff
+clean_site_corr <- function(f_nm) {
+  read.csv(f_nm) %>% 
+    select(site, corr, region) %>%
+    unique() %>%
+    write.csv(f_nm, row.names = F)
+}
+
+dummy <- lapply(
+  list(
+    here("data", "processed", "20260826", "dM_pf", "site_corr.csv"), 
+    here("data", "processed", "20260826", "dM_pf", "byfam_site_corr.csv"), 
+    here("data", "processed", "20260826", "dM_rd", "site_corr.csv")), 
+  clean_site_corr
+)
+```
+
+
+```{r}
+#| label: fig-dM_dist
+#| fig-cap: "(Left) Violin plots of the pairwise between-family Mahalanobis distances, showing a trend of increasing distance with higher visual areas. The plots for noisy textures are included for a comparison, showing noisy distances tend to be shorter with no obvious trend between areas. (Right) The split-half correlations of the sites included in the left violin plots show differences in distributions between regions. However, the trends in these distributions do not seem to be aligned with the trends in the naturalistic Mahalanobis distances."
+#| fig-width: 6
+#| fig-height: 3
+p_dM_1 <- rbind(
+  read.csv(here(out_dir, "dM_pf", "natur.csv")) %>% 
+    mutate(coherence = "Natur."), 
+  read.csv(here(out_dir, "dM_pf", "noisy.csv")) %>% 
+    mutate(coherence = "Noisy")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = factor(coherence, levels = c("Natur.", "Noisy"))) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Matched reliability between-family comparisons", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+
+p_dM_2 <- read.csv(here(out_dir, "dM_pf", "natur_site_corr.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(region, corr)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[5]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    # facet_grid(cols = vars(coherence)) + 
+    # scale_fill_discrete(palette = c(palette.colors()[5], palette.colors()[6])) + 
+    labs(
+      x = NULL, 
+      y = "Split-half correlation", 
+      title = NULL, 
+      fill = NULL) + 
+    theme(legend.position = "none")
+ggsave(here(res_dir, "matched_reliability_dM_pf.png"), p_dM_1, width = 5, height = 3, dpi = 600)
+
+p_dM_1 + p_dM_2 + plot_layout(widths = c(2, 1))
+```
+
+```{r}
+#| label: fig-dM_grp
+#| fig-cap: "Comparison of the pairwise between-family distances when reliable sites are determined by aggregation over specific sample images (left) or within texture families (right). It is difficult to match reliability distributions for within-family aggregation, as correlations in V1, V2, and V4 tend to cluster around high correlations."
+#| fig-width: 5
+#| fig-height: 4
+
+p_grp_1 <- rbind(
+  read.csv(here(out_dir, "dM_pf", "natur.csv")) %>% 
+    mutate(grp = "Image"), 
+  read.csv(here(out_dir, "dM_pf", "byfam.csv")) %>% 
+    mutate(grp = "Family")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(grp = factor(grp, levels = c("Image", "Family"))) %>%
+  ggplot(aes(region, multi_d)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[3]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(grp)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Between-family distances with family- or image-wise reliability") + 
+  theme(legend.position = "none")
+
+p_grp_2 <- rbind(
+  read.csv(here(out_dir, "dM_pf", "natur_site_corr.csv")) %>%
+    mutate(grp = "Image"), 
+  read.csv(here(out_dir, "dM_pf", "byfam_site_corr.csv")) %>%
+    mutate(grp = "Family")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(grp = factor(grp, levels = c("Image", "Family"))) %>%
+  ggplot(aes(region, corr)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[5]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_wrap(vars(grp), scales = "free_y") + 
+    # scale_fill_discrete(palette = c(palette.colors()[5], palette.colors()[6])) + 
+    labs(
+      x = NULL, 
+      y = "Split-half correlation", 
+      title = NULL, 
+      fill = NULL) + 
+    theme(legend.position = "none")
+
+p_grp_1 + p_grp_2 + plot_layout(ncol = 1)
+```
+
+## Randomized dichotomies
+
+@fig-rd is the between-sample analogue to @fig-dM_dist, and shows the results from a single arbitrary subsample of 30 sites from each region alongside the split-half correlations for each site for reference. Note that the split-half correlations are identical to @fig-dM_dist sisnce the sites were generated from the same seed and were not resampled during randomized dichotomy calculations.
+
+Unlike the between-family comparisons, the Mahalanobis distances look similar between naturalistic and noisy texture stimuli. This is not surprising, as the noisy texture stimuli lack any of the higher-order statistics that would produce a well-defined texture family. 
+
+Furthermore, the trends in the split-half correlations seem to be a reasonable explanation for the differences in the Mahalanobis distances, with higher correlations associated with larger Mahalanobis distances (though this is maybe not the case in IT). 
+
+```{r compile rd, eval = F}
+families <- unique(stimuli$family)
+coherences <- c("natur", "noisy")
+cov_ests <- c("shrinkage")
+regions <- c("V1", "V2", "V4", "IT")
+
+rds <- expand.grid(
+  coherences, 
+  cov_ests, 
+  regions, 
+  families)
+
+dM_rd <- lapply(
+  cli_progress_along(1:nrow(rds)), 
+  function(i) {
+    here(
+      out_dir, "dM_rd", 
+      rds[i, 1], rds[i, 2], rds[i, 3], 
+      paste0("fam", sprintf("%03d", rds[i, 4]), "_dM.csv")) %>%
+      read.csv() %>%
+      mutate(
+        coherence = rds[i, 1], 
+        cov_est = rds[i, 2], 
+        region = rds[i, 3], 
+        family = rds[i, 4]
+      )
+  }
+) %>% 
+  do.call(rbind, .)
+
+rd_site_corr <- lapply(
+  cli_progress_along(1:nrow(rds)), 
+  function(i) {
+    here(
+      out_dir, "dM_rd", 
+      rds[i, 1], rds[i, 2], rds[i, 3], 
+      paste0("fam", sprintf("%03d", rds[i, 4]), "_site_corr.csv")) %>%
+      read.csv() %>%
+      mutate(
+        coherence = rds[i, 1], 
+        # cov_est = rds[i, 2], 
+        region = rds[i, 3], 
+        family = rds[i, 4]
+      )
+  }
+) %>% 
+  do.call(rbind, .)
+
+qs_save(dM_rd, here(out_dir, "dM_rd", "dM.qs2"))
+write.csv(rd_site_corr, here(out_dir, "dM_rd", "site_corr.csv"), row.names = F)
+```
+
+```{r}
+#| label: fig-rd
+#| fig-cap: "(Left) Violin plots of the Mahalanobis distances on randomized dichotomies of sample images, showing roughly equal distances for all regions. The plots for noisy textures are included for a comparison, showing naturalistic and noisy distances look comparable. (Right) The split-half correlations of the sites included in the left violin plots show differences in distributions between regions. Note that the distributions are identical to before, as the sites were subsampled with the same seed. In this case, the mass of the split-half correlations seems to explain the trend in the randomized dichotomy distances."
+#| fig-width: 6
+#| fig-height: 3
+p_rd_1 <- qs_read(here(out_dir, "dM_rd", "dM.qs2")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Matched reliability between-sample randomized dichotomies", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+
+p_rd_2 <- read.csv(here(out_dir, "dM_rd", "site_corr.csv")) %>%
+  select(-site, -omit_fam) %>% 
+  unique() %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(region, corr)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[5]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    # facet_grid(cols = vars(coherence)) + 
+    # scale_fill_discrete(palette = c(palette.colors()[5], palette.colors()[6])) + 
+    labs(
+      x = NULL, 
+      y = "Split-half correlation", 
+      title = NULL, 
+      fill = NULL) + 
+    theme(legend.position = "none")
+
+ggsave(here(res_dir, "matched_reliability_dM_rd.png"), p_rd_1, width = 5, height = 3, dpi = 600)
+p_rd_1 + p_rd_2 + plot_layout(widths = c(2, 1))
+```
+
+```{r, eval = F}
+p_rd_fam <- qs_read(here(out_dir, "dM_rd", "dM.qs2")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(coherence == "natur") %>%
+  ggplot(aes(region, multi_d)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[3]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_wrap(vars(family)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Matched reliability between-sample randomized dichotomies", 
+      fill = NULL) + 
+  theme(legend.position = "none", strip.text.x = element_blank())
+
+ggsave(here(res_dir, "matched_reliability_dM_rd_family.png"), p_rd_fam, width = 8, height = 8, dpi = 600)
+```
+
+```{r, eval = F}
+p_rd_fam_2 <- qs_read(here(out_dir, "dM_rd", "dM.qs2")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(coherence == "noisy") %>%
+  ggplot(aes(region, multi_d)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[8]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_wrap(vars(family)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Between-sample randomized dichotomies (noisy)", 
+      fill = NULL) + 
+  theme(legend.position = "none", strip.text.x = element_blank())
+
+ggsave(here(res_dir, "matched_reliability_dM_rd_family_noisy.png"), p_rd_fam_2, width = 8, height = 8, dpi = 600)
+```
+
