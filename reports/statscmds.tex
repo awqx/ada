@@ -1,0 +1,88 @@
+% Symbols %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\usepackage{amsthm}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+
+% New commands %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% General mathematical symbols
+% argmin help from egreg from tex.stackexchange.com/questions/5223
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\onedim}{\mathbb{R}}
+\newcommand{\ddim}{\mathbb{R}^d}
+\newcommand{\kdim}{\mathbb{R}^k}
+
+\newcommand{\eps}{\varepsilon}
+\newcommand{\seq}[1]{\{ #1_{n} \}}
+
+\DeclareMathOperator*{\sign}{sign}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+
+% boldface
+\newcommand{\bfH}{\mathbf{H}}
+\newcommand{\bfI}{\mathbf{I}}
+\newcommand{\bfO}{\mathbf{O}}
+\newcommand{\bfU}{\mathbf{U}}
+\newcommand{\bfu}{\mathbf{u}}
+\newcommand{\bfV}{\mathbf{V}}
+\newcommand{\bfv}{\mathbf{v}}
+\newcommand{\bfW}{\mathbf{W}}
+\newcommand{\bfw}{\mathbf{w}}
+\newcommand{\bfG}{\mathbf{G}}
+\newcommand{\bfX}{\mathbf{X}}
+\newcommand{\bfx}{\mathbf{x}}
+\newcommand{\bfY}{\mathbf{Y}}
+\newcommand{\bfy}{\mathbf{y}}
+\newcommand{\bfZ}{\mathbf{Z}}
+\newcommand{\bfz}{\mathbf{z}}
+\newcommand{\bfmu}{\boldsymbol{\mu}}
+\newcommand{\bfeps}{\boldsymbol{\epsilon}}
+\newcommand{\bfbeta}{\boldsymbol{\beta}}
+\newcommand{\bfgamma}{\boldsymbol{\gamma}}
+\newcommand{\bfS}{\mathbf{S}}
+\newcommand{\bfB}{\mathbf{B}}
+
+% Sets
+\newcommand{\setA}{\mathcal{A}}
+\newcommand{\setB}{\mathcal{B}}
+\newcommand{\setC}{\mathcal{C}}
+\newcommand{\setF}{\mathcal{F}}
+\newcommand{\rademacher}{\mathcal{R}}
+\newcommand{\setP}{\mathcal{P}}
+
+% General stats
+\newcommand{\E}{\mathbb{E}}
+\DeclareMathOperator*{\var}{Var}
+\DeclareMathOperator*{\cor}{Corr}
+\DeclareMathOperator*{\cov}{Cov}
+\newcommand{\prob}{\mathbb{P}}
+
+\newcommand{\indep}{\perp \!\!\! \perp}
+\newcommand{\depen}{\cancel{\indep}}
+\newcommand{\indic}{\mathbbm{1}}
+\newcommand{\Xbar}{\overline{X}_n}
+\newcommand{\Xsqbar}{\overline{X^2_n}}
+\newcommand{\Xbarsq}{\overline{X}^2_n}
+\newcommand{\Ybar}{\overline{Y}_n}
+\newcommand{\lik}{\mathcal{L}}
+\newcommand{\ton}[1]{#1_1, \dots, #1_n}
+\newcommand{\fisher}{\mathcal{I}}
+\newcommand{\sumn}{\sum_{i = 1}^n}
+\newcommand{\prodn}{\prod_{i = 1}^n}
+
+% Distributions
+\newcommand{\hpp}{\textrm{HPP}}
+\newcommand{\ipp}{\textrm{IPP}}
+\newcommand{\geom}{\textrm{Geom}}
+\newcommand{\iid}{\overset{\textrm{i.i.d.}}{\sim}}
+\newcommand{\pois}{\textrm{Pois}}
+\newcommand{\bern}{\textrm{Bern}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\MVN}{\textrm{MVN}}
+\newcommand{\unif}{\textrm{Unif}}
+\newcommand{\binomial}{\textrm{Binom}}
+\newcommand{\expo}{\textrm{Expo}}
+\newcommand{\hgeom}{\textrm{HGeom}}

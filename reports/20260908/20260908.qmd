@@ -1,0 +1,123 @@
+---
+title: "Image statistic encoding between regions of the visual cortex"
+author: \small Al Xin
+date: last-modified
+date-format: MMM D, YYYY
+bibliography: ../refs.bib
+csl: ../nlm.csl
+execute:
+  echo: false
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    fontsize: 11pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    link-citations: true
+    include-in-header:
+      text: |
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r, message = FALSE, warning = FALSE}
+library(here)
+nb_id <- "20260908"
+here::i_am(paste0("reports/", nb_id, "/", nb_id, ".qmd"))
+
+library(here)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gt)
+
+library(patchwork)
+library(qs2)
+
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+
+# ggplot settings
+theme_set(theme_minimal(base_size = 9))
+```
+
+\pagebreak
+
+Advisors: Rob Kass (Statistics), Jenelle Feather (Psychology, Neuroscience Institute).
+
+## Abstract
+
+Later stages of the visual cortex are thought to contain neurons selective for progressively higher-level visual features. One experimental approach to detecting regional differences in visual processing is through presenting visual texture stimuli (e.g., sand, tree bark, granite, etc.). Families of visual textures can be parameterized by $N$th order joint pixel densities, so the decodability of texture families in neural responses can indicate selectivity for image statistics. Previously, Ziemba et al. (2016) found better within-family separation of neural responses in V1 and better between-family separation in V2 [@ziemba_selectivity_2016], and related work found that texture stimuli with matched higher order image statistics produced higher firing in V2 and V4 [@freeman_functional_2013; @lee_developmentally_2024; @lee_emergence_2025]. However, existing analyses lack comparisons with IT, which responds more sparsely to stimuli. Neural responses in IT are sparse in two different ways: first, most IT neurons will not respond to any texture stimuli; and second, of the IT neurons with any response to texture, only a small number of unique stimuli will produce a response. The between-family separability in IT compared to V4 can change depending on the handling of reliable and responsive sites, suggesting that IT efficiently encodes higher-level image statistics. 
+
+## Extended abstract
+
+### Higher- and lower-order visual areas may be characterized by differences in processing image statistics
+
+Later stages of the visual cortex are thought to contain neurons selective for progressively higher-level visual features. The primary visual cortex (V1), for instance, contains neurons that selectively respond to simple image features like oriented edges. In contrast, the inferior temporal gyrus (IT), which handles later visual processing, contains areas selective for object categories, such as the fusiform face area for facial recognition. One approach to characterize the relevant visual features for each layer is through recording neural responses to visual texture stimuli, which are approximately homogeneous images with repeated elements, e.g., images of sand, tree bark, granite, or honeycomb. Texture categories (families) can be parameterized by a set of image statistics, where image statistics are $N$th-order empirical densities of pixels. Unique texture samples within the same family share image statistics and should elicit comparable responses in the visual area sensitive to those particular statistics. Patterns in selectivity for higher- and lower-order image statistics can provide evidence for how visual information is propagated or summarized in visual areas. 
+
+### Existing results find a tradeoff between selectivity for higher- and lower-order statistics
+
+Previously, Ziemba et al. (2016) found better within-family separation of neural responses in V1 and better between-family separation in V2 [@ziemba_selectivity_2016]. Relatedly, Okazawa et al. (2015, 2017) compared the selectivity of V2 and V4 neurons for image statistics in texture stimuli and found V4 neurons tended to be selective for higher order statistics [@okazawa_image_2015; @okazawa_gradual_2017]. Other analyses of between-region texture responses found that texture stimuli with matched higher order image statistics produced higher firing of V2 and V4 neurons compared to stimuli lacking higher order image statistics [@freeman_functional_2013; @lee_developmentally_2024; @lee_emergence_2025].
+
+### It is unknown whether trends in selectivity for image statistics extend beyond V4
+
+![(Top) A visual representation of two families in some arbitrary 2D representation space. (Bottom) The distances between families and between samples, with some arbitrary values for each region.](../img/proposed_results.png){#fig-intro width=50%}
+
+In my ADA, I am analyzing data collected by Lee et al. (2024), who recorded neural responses in V1, V2, V4, and IT, spanning the entire range of the visual processing stream [@lee_developmentally_2024]. Based on previous results, I expect to find better between-group discrimination in later areas and better within-group discrimination in earlier areas (see @fig-intro for a schematic). However, existing analyses tend to lack results for the entire visual processing stream, so it is unclear if this trend will reliably extend to IT. This gap is partially due to the practical limitations of supporting a large population of animals, but there are also methodological challenges with analyzing IT. Higher level areas tend to produce sparse responses, so typical approaches in the literature, such as size-matched population analyses or single-site neuron metrics, may not produce reliable comparisons between IT and earlier visual areas.
+
+### Results for IT are dependent on the treatment of sparsity
+
+I found that neural responses in IT are sparse in two different ways: first, most IT neurons will not respond to any texture stimuli; and second, of the IT neurons with any response to texture, only a small number of unique stimuli will produce a response. For V1, V2, and V4, recording sites that are unreliable (low correlation between responses to the same stimuli) tend to also be unresponsive (low separability between responses to different stimuli). Depending on the reliability metric, IT may produce worse or better between-family separability in IT compared to V4, while within-family separability in IT remains consistently worse than V4. This contrast suggests that IT destructively summarizes pixel-level differences in images but efficiently encodes higher-level image statistics. 
+
+\pagebreak 
+
+## Methods and analysis
+
+### Mahalanobis distance can capture linear separability but is not robust to variation in dimensionality
+
+### Generalization performance of regularized regression models can be applied to between-family but not within-family comparisons
+
+### Typical criteria for discarding unreliable or unresponsive sites may produce selection bias
+
+### Randomized dichotomy distances can compensate for low sample numbers in within-family comparisons
+
+### Shrinkage covariance estimators can also be applied to within-family comparisons
+
+\pagebreak 
+
+## Results
+
+### Subject-specific patterns in sparsity appear across V1, V4, and IT
+
+### IT responses are sparse at both the site- and image-level
+
+### The best-separated texture families and sample images tend to be consistent across regions and subjects
+
+### V2 produces the highest between-sample separability and V4 produces the highest between-family separability 
+
+### Different metrics for separability produce similar relative results
+
+### Site inclusion criteria affect separability comparisons between V4 and IT 
+
+## Discussion
+
+### Texture families are a limited proxy of the target measure of image statistic selectivity 
+
+### Multi-unit activations may record from neighboring neurons 
+
+### Sparsity in IT may drive differences between neural decoding results and behavioral performance
+
+### Between-region and between-subject sparsity considerations precludes selection of a holdout set
+
+\pagebreak 
+
+## References
+
+::: {#refs}
+:::
+
+  
