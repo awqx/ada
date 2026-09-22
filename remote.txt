@@ -5,6 +5,8 @@ renv/settings.json
 data/raw/6reps/
 data/processed/20260625/
 data/processed/20260723/dichotomies.csv
+data/processed/20260826/
 scripts/
 results/
 remote.txt
+R/

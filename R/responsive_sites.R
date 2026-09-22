@@ -1,7 +1,6 @@
 library(here)
 source(file.path(here("R"), "onset_time.R"))
 
-
 #' Split-half correlation helper
 #'
 #' Finds correlation of even and odd repetitions of the same stimulus
@@ -43,9 +42,18 @@ split_half_corr <- function(channel, avg_grp, split_grp) {
 #' @return int vector of responsive channels
 
 responsive_sites <- function(
-  mua, onset_grp, avg_grp, split_grp, stim_idx = 50, l_stim = 20, l_window = 15
+  mua,
+  onset_grp,
+  avg_grp,
+  split_grp,
+  onset = NULL,
+  stim_idx = 50,
+  l_stim = 20,
+  l_window = 15
 ) {
-  onset <- onset_time(mua[, stim_idx:(stim_idx + l_stim), ], onset_grp)
+  if (is.null(onset)) {
+    onset <- onset_time(mua[, stim_idx:(stim_idx + l_stim), ], onset_grp) }
+
   mua_avg <- apply(
     mua[, onset:(onset + l_window - 1) + stim_idx - 1, ], c(1, 3), mean)
   sapply(

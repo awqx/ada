@@ -1,4 +1,4 @@
-# Advanced data analysis proejct
+# Advanced data analysis project
 
 Stats and Data Science PhD requirement. 
 
@@ -10,6 +10,7 @@ Data cleaning and analysis of Lee et al., 2024, available on [Zenodo](https://ze
 
 Brief summaries of the contents of `notebooks/`, reverse chronologically
 
+- `20260826`: returning to reliable/responsive site characterization
 - `20260820`: Normalization of neural responses, Mahalanobis robustness
 - `20260813`: Detection of sparsity in neural responses
 - `20260723`: Randomized dichotomy within-family d' calculations 
@@ -26,9 +27,3 @@ Brief summaries of the contents of `notebooks/`, reverse chronologically
 - `20260122`: adding some start time extraction
 - `20260107`: initial check of eigenvalues from PCA (not SVD)
 - `20251120`: initial loading of MATLAB files
-
-
-
-
-
-- 
