@@ -53,7 +53,8 @@ onset_time <- function(
   if (all_times)
     return(onsets)
 
-  onset <- median(onsets, na.rm = T) - 2
+  onset <- median(onsets, na.rm =  T)
+
   if (is.na(onset)) {
     return(default_onset)
   } else {

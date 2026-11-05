@@ -27,7 +27,9 @@ dM <- function(dat, grps, shrink = F, return_diff = T) {
       sweep(dat[grps == 2, ], 2, mu_2, FUN = "-")) %>%
       corpcor::invcov.shrink(verbose = F)
   } else {
-    inv_cov <- Rfast::spdinv(pooled.cov(dat, ina = grps)) }
+    if (dim(dat)[2] > dim(dat)[1])
+      stop("The normal covariance estimator cannot be inverted when p > n. Apply the shrinkage estimator with `shrink = T`.")
+    inv_cov <- Rfast::spdinv(Rfast::pooled.cov(dat, ina = grps)) }
   multi_d <- sqrt(t(mu_diff) %*% inv_cov %*% (mu_diff))
 
   if (return_diff) {
