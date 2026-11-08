@@ -471,7 +471,7 @@ The randomized dichotomy results, in order of increasing median distance, tends 
 #| fig-width: 4.5
 #| fig-height: 2.5
 
-rd_infam <- here("results", "20260723", "rd_infam.csv") %>%
+rd_infam <- here("data", "processed", "20260723", "rd_infam.csv") %>%
   read.csv() %>%
   mutate(
     shrink = as.character(as.integer(shrink)), 
@@ -576,7 +576,7 @@ fam_summary <- dM %>%
   unnest(temp) %>% 
   mutate(nm = "Family")
 
-dM_samp <- here("results", "20260723", "rd_infam.csv") %>%
+dM_samp <- here("data", "processed", "20260723", "rd_infam.csv") %>%
   read.csv() %>%
   mutate(
     shrink = as.character(as.integer(shrink)), 

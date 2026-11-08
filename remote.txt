@@ -4,6 +4,7 @@ renv/activate.R
 renv/settings.json
 data/raw/6reps/
 data/processed/20261104/
+data/processed/20260723/rd_infam.csv
 scripts/
 results/
 remote.txt

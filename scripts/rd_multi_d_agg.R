@@ -55,4 +55,4 @@ fam_ids <- read.csv(here(data_dir, "stimuli.csv")) %>%
 # 2 Aggregation over loop #####################################
 
 res <- agg_rd(rd_dir, fam_ids, n_sites, regions, shrink)
-write.csv(res, here(res_dir, "rd_infam.csv"), row.names = F)
+write.csv(res, here("data", "processed", nb_id, "rd_infam.csv"), row.names = F)
