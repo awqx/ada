@@ -1,0 +1,715 @@
+---
+title: "Inter-region site sparsity"
+date: last-modified
+author: Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 11pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20261007"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+## Sparsity measures
+
+### Lifetime vs. population
+
+### Moment ratio
+
+A common lifetime sparsity measure is the ratio of moments (call this the "RM" estimator) (Rolls and Tovee, 1995; Vinje and Gallant, 2000):
+$$
+S_{\textrm{RM}} = \left( 1 - \frac{\left( \frac{1}{n} \sum_{i = 1}^n r_i \right)^2}{\frac{1}{n} \sum_{i = 1}^n r_i^2} \right) \left( \frac{1}{1 - \frac{1}{n}} \right).
+$$
+The term $\left( \frac{1}{1 - \frac{1}{n}} \right)$ scales the above to $[0, 1]$, with 0 indicating uniformity and 1 indicating maximal concentration. 
+
+### Gini index
+
+Hurley and Rickard (2009) suggest the Gini coefficient (see also: `DescTools::Gini()`). Assume that the rates are ordered as $r_{(1)}, r_{(2)}, \dots, r_{(n)}$. Then, 
+$$
+S_{\textrm{Gini}} = 
+\frac{2}{n^2 \overline{r}}
+\sum_{i = 1}^n i (r_{(i)} - \overline{r}), \quad \overline{r} = \frac{1}{n} \sum_{i = 1}^{n} r_i.
+$$
+By default, the above falls within 0 and $\sqrt{(n - 1) / n}$, so dividing the above by $\sqrt{(n - 1) / n}$ gives the same $[0, 1]$ interpretation as the RM estimator. 
+
+### Entropy-based effective dimensionality
+
+(Check this later).
+
+## Data processing shifts sparsity
+
+```{r}
+dat <- here("data", "processed", "20260917", "avgs", "median_150.qs2") %>%
+  qs_read()
+regions <- c("V1", "V2", "V4", "IT")
+```
+
+```{r rm sparsity}
+#' Sparsity with ratio of moments
+#' 
+#' Calculate the sparsity with the ratio of moments (similar to pq-mean) (Rolls and Tovee, 1995; Vinje and Gallant, 2000). 
+#' @param x numeric vector
+
+rm_sparsity <- function(x) {
+  scalar <- 1 / (1 - 1 / length(x))
+  m1 <- mean(x) ^ 2
+  m2 <- mean(x ^ 2)
+  (1 - m1 / m2) * scalar
+}
+
+#' Calculate sparsity given a method
+#' 
+#' Calculate the per-column sparsity. 
+#' 
+#' @param dat numeric matrix
+#' @param sparsity_method function to calculate sparsity of a vector
+
+# col_sparsities <- function(dat, sparsity_method) {
+#   lapply(
+#     regions, 
+#     function(rgn) {
+#       dat[[rgn]] %>%
+#         apply(2, sparsity_method) %>%
+#         data.frame(sparsity = ., region = rgn) %>%
+#         mutate(site = row_number()) }) %>%
+#     do.call(rbind, .)
+# }
+
+col_sparsities <- function(dat, sparsity_method) {
+  dat %>%
+    apply(2, sparsity_method) %>%
+    tibble::as_tibble_col(column_name = "sparsity") %>%
+    mutate(site = row_number()) 
+}
+```
+
+Unless otherwise indicated, I will apply RM sparsity. In my initial pass, the results did not change based on the sparsity metric.
+
+### Baseline subtraction
+
+```{r}
+stimuli <- read.csv(here("data", "processed", "20260826", "stimuli.csv")) %>%
+  group_by(coherence, family, id) %>%
+  mutate(grp = cur_group_id())
+nonblank_idx <- stimuli$coherence > 0
+blank_idx <- stimuli$coherence == 0
+img_grp <- stimuli$grp 
+
+here("R", "avg_by_grp.R") %>% source()
+
+sparsity_methods <- c(rm_sparsity, DescTools::Gini)
+names(sparsity_methods) <- c("RM", "Gini")
+```
+
+Unlike Mahalanobis distance, sparsity *will* be affected by shifting of the responses (but not scaling). In general, the addition of a constant lowers the calculated sparsity (this is a known desirable property of sparsity calculation). So, as an important processing consideration, one might be interested in subtracting the baseline response (mean response to blank stimuli). By subtracting the baseline, one reports something that might be more interpretable as the sparseness of the site response to stimuli. 
+
+For instance, let the baseline of a site be 60 Hz. If most of the stimuli produce an average response of 61 Hz while a single stimulus produces an average response of 80 Hz, the sparsity will look higher after subtracting the baseline. The key question is: should this be treated as the same sparsity as a site with a baseline of 0 Hz, most stimuli evoking 1 Hz, and a single stimulus evoking 20 Hz? Furthermore, what about a site with a baseline of 60 Hz, most stimuli evoking 59 Hz, and a single stimulus at 40 Hz? 
+
+```{r}
+label_arrays <- function(df) {
+  df %>%
+    mutate(array = ceiling(site / 96)) %>%
+    mutate(array = replace_when(array, 
+      region == "V1" & site > 61 ~ 2, 
+      region == "V2" & site > 35 ~ 2
+    )) %>%
+    mutate(array = factor(paste0("Array ", array)))
+}
+order_regions <- function(df) {
+  df %>%
+    mutate(region = factor(region, levels = regions))
+}
+
+baselines <- lapply(
+  regions, 
+  function(region) { 
+    dat[[region]][blank_idx, ] %>%
+      colMeans() %>%
+      tibble::as_tibble_col(column_name = "baseline") %>%
+      mutate(site = row_number(), region = region) }) %>%
+  do.call(rbind, .) %>%
+  label_arrays() %>%
+  order_regions()
+write.csv(baselines, here(out_dir, "baselines.csv"), row.names = F)
+
+centered <- lapply(
+  regions, 
+  function(region) { 
+    dat_ <- dat[[region]]
+    sweep(dat_, 2, colMeans(dat_[blank_idx, ]), "-") })
+names(centered) <- regions
+qs_save(centered, here(out_dir, "centered.qs2"))
+```
+
+```{r}
+#| label: fig-baselines
+#| fig-cap: "Histogram of per-site baseline firing (mean response to blank image) for each region. Dashed lines indicate medians."
+#| fig-width: 5
+#| fig-height: 2.5
+baselines <- here(out_dir, "baselines.csv") %>%
+  read.csv() %>%
+  order_regions() %>%
+  mutate(baseline = baseline * 100) %>%
+  rename(firing = baseline)
+baseline_summary <- baselines %>%
+  group_by(region) %>%
+  summarize(x = median(firing)) %>%
+  order_regions() %>%
+  mutate(nm = "baseline")
+
+centered <- qs_read(here(out_dir, "centered.qs2"))
+centered_site <- lapply(
+  regions, 
+  function(region) {
+    centered[[region]][nonblank_idx, ] %>%
+      colMeans() %>%
+      tibble::as_tibble_col(column_name = "firing") %>%
+      mutate(
+        firing = 100 * firing,
+        region = region, 
+        site = row_number()) }) %>%
+  do.call(rbind, .) %>%
+  mutate(nm = "centered")
+centered_summary <- centered_site %>%
+  group_by(region) %>%
+  summarize(x = median(firing)) %>%
+  order_regions() %>%
+  mutate(nm = "centered")
+  
+here(out_dir, "baselines.csv") %>%
+  read.csv() %>%
+  order_regions() %>%
+  mutate(baseline = baseline * 100) %>%
+  ggplot(aes(x = baseline, y = ..ndensity.., fill = region)) + 
+    geom_histogram(bins = 20, alpha = 0.8) + 
+    geom_vline(
+      data = baseline_summary,
+      aes(xintercept = x), 
+      linetype = "dashed") + 
+    facet_wrap(vars(region), nrow = 1) + 
+    labs(
+      x = "Mean firing on blank stimuli (Hz)",
+      y = NULL, 
+      fill = NULL) +
+    theme(
+      legend.position = "none", 
+      axis.text.x = element_blank(), 
+      panel.grid.minor = element_blank()) + 
+    coord_flip()
+```
+
+#### Handling resulting negatives
+
+As an additional concern, subtracting the baseline might yield a negative number, which cannot be used in sparsity calculation. Let $\Delta r_i$ be the response minus the blank baseline. Truncating negatives by taking $\max(0, \Delta r_i)$ inflates the sparsity of sites that are centered around the baseline. Taking the absolute value after subtraction would deflate the sparsity of sites that tend to be centered around the baseline (compared to truncating). (In practice, the baseline subtraction makes sparsities net inflated)
+
+```{r, eval = F}
+library(cli)
+
+sparsity_params <- function(params, dat = dat) {
+  lapply(
+    cli_progress_along(1:nrow(params), "Sparsities"), 
+    function(i) {
+      region <- params[i, "region"]
+      sparsity_method <- sparsity_methods[[params[i, "sparsity_method"]]]
+      dat_ <- dat %>% .[[region]]
+      
+      if (params[i, "subtract_baseline"]) { 
+        dat_ <- sweep(dat_, 2, colMeans(dat_[blank_idx, ]), "-")
+        if (params[i, "if_neg"] == "zero") {
+          dat_[dat_ < 0] <- 0
+        } else {
+          dat_ <- abs(dat_) }}
+        
+      dat_ %>%
+        as_tibble() %>%
+        avg_by_grp(img_grp, nonblank_idx) %>%
+        col_sparsities(sparsity_method) %>%
+        mutate(
+          region = region,
+          if_neg = params[i, "if_neg"],
+          subtract_baseline = params[i, "subtract_baseline"], 
+          method = params[i, "sparsity_method"]) }) %>%
+    do.call(rbind, .)
+}
+
+sparsities_1 <- expand.grid(
+  region = regions, 
+  subtract_baseline = F,
+  if_neg = "none",
+  sparsity_method = "RM") %>%
+  sparsity_params()
+
+
+sparsities_2 <- expand.grid(
+  region = regions, 
+  subtract_baseline = T, 
+  if_neg = c("zero", "abs"), 
+  sparsity_method = "RM") %>%
+  sparsity_params()
+
+baseline_handling <- rbind(sparsities_1, sparsities_2)
+
+write.csv(baseline_handling, here(out_dir, "baseline_handling.csv"), row.names = F)
+```
+
+```{r}
+#| label: fig-baseline
+#| fig-cap: "After subtracting the per-site mean response to blank images, the calculated sparsity increases for each site. Rows correspond to differnt approaches to handling negative differences (Truncated: send to zero; Abs. value: take absolute value). Sparsities calculated with RM on image-averaged responses."
+#| fig-width: 4
+#| fig-height: 4
+library(patchwork)
+sparsities <- read.csv(here(out_dir, "baseline_handling.csv")) %>%
+  mutate(array = ceiling(site / 96)) %>%
+  mutate(array = replace_when(array, 
+    region == "V1" & site > 61 ~ 2, 
+    region == "V2" & site > 35 ~ 2
+  )) %>%
+  mutate(array = factor(paste0("Array ", array))) %>%
+  mutate(region = factor(region, levels = regions))
+
+sparsities_original <- sparsities %>%
+  filter(!subtract_baseline) %>% 
+  rename(Original = sparsity) %>% 
+  select(site, region, Original)
+recentered_vs_original <- sparsities %>%
+  filter(subtract_baseline) %>%
+  select(-subtract_baseline) %>%
+  mutate(baseline_handling = recode_values(if_neg, 
+    "zero" ~ "Truncated", 
+    "abs" ~ "Abs. value")) %>%
+  rename(Recentered = sparsity) %>%
+  left_join(sparsities_original, by = c("region", "site"))
+
+recentered_max <- sparsities %>% 
+  filter(subtract_baseline) %>%
+  .$sparsity %>% 
+  max()
+
+recentered_vs_original %>%
+  ggplot(aes(x = Original, y = Recentered, shape = array, color = array)) + 
+    geom_point(alpha = 0.4) + 
+    facet_grid(cols = vars(region), rows = vars(baseline_handling)) + 
+    geom_abline(intercept = 0, slope = 1, linetype = "dotted", alpha = 0.5) + 
+    coord_fixed(ratio = 1, xlim = c(0, 0.45), ylim = c(0, recentered_max)) + 
+    scale_x_continuous(breaks = c(0, 0.2, 0.4)) + 
+    labs(
+      x = "Per-site sparsity on raw firing rates", 
+      y = "With centering", 
+      color = NULL, shape = NULL) +
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) + 
+    theme(
+      legend.position = "bottom", 
+      panel.grid.minor = element_blank())
+```
+
+@fig-baseline shows the per-site sparsity shifts with these different approaches. As expected, after subtracting the baseline, the calculated sparsity increases. The shift with truncated negatives is higher than with the absolute value. 
+
+*If it can be justified*, I would prefer the baseline-centered sparsity scores since the intuition more aligns with what I consider "relevant" sparsity. Also, the range appears wider and possibly more informative. Interestingly, in the absolute value approach, V1 barely shifts in sparsity. 
+
+```{r, eval = F}
+avgs_centered <- lapply(
+  regions, 
+  function(region) { 
+    dat_ <- dat[[region]]
+    sweep(dat_, 2, colMeans(dat_[blank_idx, ]), "-") %>%
+      as_tibble() %>% 
+      avg_by_grp(img_grp, nonblank_idx) })
+names(avgs_centered) <- regions
+qs_save(avgs_centered, here(out_dir, "avgs_centered.qs2"))
+```
+
+#### Relationship between sparsity changes and site characteristics
+
+```{r}
+#| label: fig-shift_vs_firing
+#| fig-cap: "The baseline firing does not appear related to the difference in sparsity except in IT, where they appear somewhat positively correlated."
+#| fig-width: 5
+#| fig-height: 3.5
+
+baselines <- lapply(
+  regions, 
+  function(region) { 
+    dat %>% 
+      .[[region]] %>% 
+      .[blank_idx, ] %>%
+      colMeans() %>%
+      tibble::as_tibble_col(column_name = "baseline") %>%
+      mutate(region = region, site = row_number()) }) %>% 
+  do.call(rbind, .) %>% 
+  mutate(baseline = baseline * 100)
+
+avgs_centered <- qs_read(here(out_dir, "centered.qs2"))
+
+# per-site number of negatives
+below_baseline <- lapply(
+  regions, 
+  function(region) {
+    colMeans(avgs_centered[[region]] < 0) %>% 
+      tibble::as_tibble_col(column_name = "below_baseline") %>%
+      mutate(site = row_number(), region = region)
+    }) %>%
+  do.call(rbind, .)
+
+sparsity_shifts <- recentered_vs_original %>%
+  mutate(sparsity_shift = Recentered - Original) %>%
+  select(site, region, baseline_handling, array, sparsity_shift) %>%
+  left_join(baselines, by = c("site", "region")) %>%
+  left_join(below_baseline, by = c("site", "region")) %>%
+  mutate(region = factor(region, levels = regions)) 
+
+sparsity_shifts %>% 
+  ggplot(aes(x = baseline, y = sparsity_shift, color = array, shape = array)) + 
+    geom_point(alpha = 0.4) + 
+    facet_grid(cols = vars(region), rows = vars(baseline_handling)) + 
+    labs(
+      x = "Mean response to blank stimulus (Hz)", 
+      y = "Sparsity change") +
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+    theme(
+      legend.position = "bottom", 
+      panel.grid.minor = element_blank())
+```
+
+@fig-shift_vs_firing shows that the change in calculated sparsity with or without baseline centering does not appear to be related to the baseline firing rate for V1, V2, and V4. However, when truncating negatives, the relationship seems positive in IT. 
+
+```{r}
+#| label: fig-shift_vs_negatives
+#| fig-cap: "Truncating the zeroes produces a marked inflation of the sparsity scores compared to taking the absolute value."
+#| fig-width: 5
+#| fig-height: 3.5
+
+sparsity_shifts %>%
+  ggplot(aes(x = below_baseline, y = sparsity_shift, color = array, shape = array)) + 
+    geom_point(alpha = 0.4) + 
+    facet_grid(cols = vars(region), rows = vars(baseline_handling)) + 
+    labs(
+      x = "Prop. of image-averaged responses below baseline", 
+      y = "Sparsity change", 
+      shape = NULL, color = NULL) +
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+   scale_x_continuous(breaks = 0:5 * 0.2) + 
+    theme(
+      legend.position = "bottom", 
+      panel.grid.minor = element_blank())
+```
+@fig-shift_vs_negatives shows the disadvantage of truncation. When negatives are truncated to zero, the sites with the most negatives show a positive relationship with the sparsity shift (especially in IT). This relationship basically disappears when negatives are taken as their absolute value. 
+
+### Effects of averaging on sparsity
+
+More averaging tends to decrease sparsity; this is expected based on the removal of noise (@fig-sparsity_avgs). It seems most "sane" to perform image-averaged sparsity calculations. 
+
+@fig-sparsity_fam_vs_img shows that family averaging tends to produce sparsities positively correlated with repetition averaging for all sites except IT. For IT, family averaging suppresses the sparsity. 
+
+```{r, eval = F}
+library(cli)
+here("R", "avg_by_grp.R") %>% source()
+
+stimuli <- read.csv(here("data", "processed", "20260826", "stimuli.csv")) %>%
+  group_by(coherence, family, id) %>%
+  mutate(grp = cur_group_id())
+nonblank_idx <- stimuli$coherence > 0
+avg_grps <- list(
+  by_rep = 1:nrow(stimuli), 
+  by_img = stimuli$grp,
+  by_fam = stimuli$family
+)
+
+params <- expand.grid(
+  region = regions, 
+  avg_grp = names(avg_grps), 
+  sparsity_method = "RM")
+
+avg_handling <- lapply(
+  cli_progress_along(1:nrow(params), "Sparsities"), 
+  function(i) {
+    region <- params[i, "region"]
+    avg_grp <- avg_grps[[params[i, "avg_grp"]]]
+    sparsity_method <- sparsity_methods[[params[i, "sparsity_method"]]]
+    dat %>%
+      .[[region]] %>%
+      sweep(2, colMeans(dat[[region]][blank_idx, ]), "-") %>%
+      abs() %>%
+      as_tibble() %>%
+      avg_by_grp(avg_grp) %>%
+      col_sparsities(sparsity_method) %>%
+      mutate(
+        region = region,
+        avg_grp = params[i, "avg_grp"], 
+        method = params[i, "sparsity_method"]) }) %>%
+  do.call(rbind, .)
+
+write.csv(avg_handling, here(out_dir, "avg_handling.csv"), row.names = F)
+```
+
+```{r}
+#| label: fig-sparsity_avgs
+#| fig-cap: "Changes in regional sparsity distributions based on whether stimuli are not averaged (None), averaged over repetitions of the same image (Image), or averaged over families (Family). More averaging shifts the distribution left."
+#| fig-width: 5
+#| fig-height: 2
+
+avg_handling <- read.csv(here(out_dir, "avg_handling.csv")) %>%
+  as_tibble() %>%
+  mutate(region = factor(region, levels = regions))
+
+avg_handling %>%
+  filter(method == "RM") %>%
+  mutate(Averaging = recode_values(avg_grp, 
+    "by_rep" ~ "None", 
+    "by_img" ~ "Image", 
+    "by_fam" ~ "Family")) %>%
+  ggplot(aes(x = sparsity)) +
+    geom_histogram(aes(fill = Averaging, y = ..density..), bins = 50, alpha = 0.6, position = "identity") +
+    # geom_density(aes(color = avg_grp)) + 
+    facet_wrap(vars(region), nrow = 1) + 
+    labs(x = "Sparsity (baseline-centered, abs. val.)", y = NULL) + 
+    theme(axis.text.y = element_blank(), panel.grid.minor = element_blank(), legend.position = "right") + 
+  coord_flip()
+```
+
+```{r}
+#| label: fig-sparsity_fam_vs_img
+#| fig-cap: "Changes in regional sparsity distributions based on whether stimuli are averaed over family or averaged over repetitions of the same image."
+#| fig-width: 5
+#| fig-height: 2.5
+
+read.csv(here(out_dir, "avg_handling.csv")) %>%
+  as_tibble() %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(method == "RM") %>%
+  mutate(Averaging = recode_values(avg_grp, 
+    "by_rep" ~ "None", 
+    "by_img" ~ "Image", 
+    "by_fam" ~ "Family")) %>%
+  select(-avg_grp) %>%
+  filter(Averaging != "None") %>%
+  pivot_wider(names_from = Averaging, values_from = sparsity) %>%
+  mutate(array = ceiling(site / 96)) %>%
+  mutate(array = replace_when(array, 
+    region == "V1" & site > 61 ~ 2, 
+    region == "V2" & site > 35 ~ 2
+  )) %>%
+  mutate(array = factor(paste0("Array ", array))) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(x = Image, y = Family, shape = array, color = array)) +
+    geom_point(alpha = 0.5) +
+    facet_wrap(vars(region), nrow = 1) + 
+  geom_abline(slope = 1, intercept = 0, alpha = 0.5, linetype = "dashed") + 
+    labs(
+      x = "Averaged over image repetitions", 
+      y = "Averaged over family",
+      color = NULL, shape = NULL) + 
+    theme(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()) +
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1))
+```
+
+```{r, eval = F}
+ggsave(here(res_dir, "sparsity_fam_vs_img.png"), width = 5, height = 2.5, dpi = 600)
+```
+
+
+### Sparsity measures generally agree
+
+The two approaches to sparsity generally agree, though IT is somewhat less strongly correlated. Unless otherwise specified, results will reflect the ratio of moments estimator, which is more common in neuroscience. 
+
+- I haven't updated this with the averaging/baseline handling
+- Might be an addendum later
+
+### Sparsities and reliability (split-half correlation)
+
+The relationship between split-half reliability and sparsity is not obvious (@fig-corr_vs_sparsity). The overall results do not change when using Spearman-Brown corrected Pearson's (@fig-spearman_vs_sparsity). In general, IT tends to show higher lifetime sparsity for each site. Both IT and V1 show at least one array with an apparent positive relationship.
+
+```{r}
+#| label: fig-corr_vs_sparsity
+#| fig-cap: "Scatter plot of sparsity and split-half correlation for each site, separated by region. In general, IT shows higher sparsity, though the correlation with reliability is not obvious. Both V1 and IT show a cluster of low-reliability sites with a wide distribution of clustering."
+#| fig-width: 5
+#| fig-height: 4
+library(patchwork)
+sparsities <- here(out_dir, "baseline_handling.csv") %>%
+  read.csv() %>%
+  filter(method == "RM", if_neg == "abs") %>%
+  select(-method, -if_neg, -subtract_baseline)
+
+corr_vs_sparsity <- here("data", "processed", "20260917", "split_corrs.csv") %>%
+  read.csv() %>%
+  filter(onset_type == "median", ms == 150) %>%
+  select(-onset_type, -ms) %>%
+  full_join(sparsities, by = c("region", "site")) %>%
+  mutate(array = ceiling(site / 96)) %>%
+  mutate(array = replace_when(array, 
+    region == "V1" & site > 61 ~ 2, 
+    region == "V2" & site > 35 ~ 2
+  )) %>%
+  mutate(array = factor(paste0("Array ", array))) %>%
+  mutate(region = factor(region, levels = regions)) 
+
+p1 <- corr_vs_sparsity %>%
+  filter(corr > 0.2) %>%
+  ggplot(aes(x = sparsity, y = ..ndensity.., fill = region)) + 
+    geom_histogram(bins = 20) + 
+    facet_wrap(vars(region), nrow = 1) + 
+    coord_flip() + 
+    labs(y = "Normalized count", x = "Lifetime sparsity") + 
+    theme(panel.grid.minor = element_blank(), axis.text.x = element_blank(), legend.position = "none")
+p2 <- corr_vs_sparsity %>%
+  filter(corr > 0.2) %>%
+  ggplot(aes(y = corr, x = sparsity, shape = array)) + 
+    geom_point(alpha = 0.5, aes(color = array)) + 
+    labs(
+      color = NULL, shape = NULL,
+      x = "Lifetime sparsity", 
+      y = "Split-half correlation (Pearson's ρ)") + 
+    coord_flip() + 
+    facet_wrap(vars(region), nrow = 1) + 
+    geom_segment(x = 0.1, xend = 0.1, y = 0.6, yend = 0.8, linetype = "dashed") +
+    geom_segment(x = 0.1, xend = 0.0, y = 0.6, yend = 0.6, linetype = "dashed") + 
+    theme(
+      strip.text = element_blank(),
+      legend.position = "bottom", 
+      panel.grid.minor = element_blank()) +
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1))
+
+p1 + p2 + plot_layout(nrow = 2, heights = c(1, 2))
+```
+
+```{r, eval = F}
+ggsave(here(res_dir, "sparsity_vs_corr.png"), width = 5, height = 4, dpi = 600)
+```
+
+```{r}
+#| label: fig-spearman_vs_sparsity
+#| fig-cap: "Scatter plot of sparsity and Spearman-Brown corrected split-half correlation for each site, separated by region. In general, IT shows higher sparsity, though the correlation with reliability is not obvious. Both V1 and IT show a cluster of low-reliability sites with a wide distribution of clustering."
+#| fig-width: 5
+#| fig-height: 4
+library(patchwork)
+sparsities <- here(out_dir, "baseline_handling.csv") %>%
+  read.csv() %>%
+  filter(method == "RM", if_neg == "abs") %>%
+  select(-method, -if_neg, -subtract_baseline)
+
+dat <- here("data", "processed", "20260917", "split_corrs.csv") %>%
+  read.csv() %>%
+  filter(onset_type == "median", ms == 150) %>%
+  select(-onset_type, -ms) %>%
+  full_join(sparsities, by = c("region", "site")) %>%
+  mutate(array = ceiling(site / 96)) %>%
+  mutate(array = replace_when(array, 
+    region == "V1" & site > 61 ~ 2, 
+    region == "V2" & site > 35 ~ 2
+  )) %>%
+  mutate(array = factor(paste0("Array ", array))) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(spbrown = 2 * corr / (1 + corr))
+
+p1 <- dat %>%
+  filter(spbrown > 0.2) %>%
+  ggplot(aes(x = sparsity, y = ..ndensity.., fill = region)) + 
+    geom_histogram(bins = 20) + 
+    facet_wrap(vars(region), nrow = 1) + 
+    coord_flip() + 
+    labs(y = "Normalized count", x = "Lifetime sparsity") + 
+    theme(panel.grid.minor = element_blank(), axis.text.x = element_blank(), legend.position = "none")
+p2 <- dat %>%
+  filter(spbrown > 0.2) %>%
+  ggplot(aes(y = spbrown, x = sparsity, shape = array)) + 
+    geom_point(alpha = 0.5, aes(color = array)) + 
+    labs(
+      color = NULL, shape = NULL,
+      x = "Lifetime sparsity", 
+      y = "Reliability (Spearman-Brown)") + 
+    coord_flip() + 
+    facet_wrap(vars(region), nrow = 1) + 
+    geom_segment(x = 0.1, xend = 0.1, y = 0.6, yend = 0.8, linetype = "dashed") +
+    geom_segment(x = 0.1, xend = 0.0, y = 0.6, yend = 0.6, linetype = "dashed") + 
+    theme(
+      strip.text = element_blank(),
+      legend.position = "bottom", 
+      panel.grid.minor = element_blank()) +
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1))
+
+p1 + p2 + plot_layout(nrow = 2, heights = c(1, 2))
+```
+
+```{r, eval = F}
+p1 + p2 + plot_layout(nrow = 2, heights = c(1, 2))
+ggsave(here(res_dir, "sparsity_vs_reliability.png"), width = 5, height = 4, dpi = 600)
+```
+
+```{r, eval = F}
+#| label: fig-array_corr_vs_sparsity_firing
+#| fig-cap: "Arrays separated"
+#| fig-width: 6
+#| fig-height: 6
+split_corrs %>%
+  full_join(sparsities %>% filter(method == "rm")) %>%
+  full_join(firings) %>%
+  mutate(firing_indicator = case_when(
+    firing <= quantile(firings$firing, 0.25) ~ "Low", 
+    firing >= quantile(firings$firing, 0.75) ~ "High", 
+    .default = "Center"
+  )) %>%
+  mutate(array = ceiling(site / 96)) %>%
+  mutate(array = replace_when(array, 
+    region == "V1" & site > 61 ~ 2, 
+    region == "V2" & site > 35 ~ 2
+  )) %>%
+  mutate(array = factor(paste0("Array ", array))) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(x = sparsity, y = corr, color = array, shape = array)) + 
+    geom_point(alpha = 0.5) + 
+    #geom_vline(xintercept = 0.15, alpha = 0.5, linetype = "dotted") + 
+    labs(
+      color = "Firing",
+      x = "Site sparsity", 
+      y = "Split-half correlation (Pearson's)") + 
+    facet_grid(rows = vars(region), cols = vars(array)) + 
+    coord_fixed(ratio = .5, xlim = c(0, 0.6), ylim = c(0, 1)) + 
+    theme(
+      # legend.position = "none", 
+      panel.grid.minor = element_blank())
+```
+
+## Big question
+
+So far, there are a couple of "simple" insights:
+
+- In IT, sparsity tends to be more positively correlated with reliability. 
+- In IT, responses tend to be sparse on the image level, so taking averages over the family kills the sparsity. 
+- Thus, there's a fairly clean link between why a reliability cutoff over more images penalizes IT more than other reasons. 
+

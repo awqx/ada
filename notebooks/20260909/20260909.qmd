@@ -210,6 +210,12 @@ p_dM_vs_sd <- dM_vs %>%
 p_dM_vs_avg + p_dM_vs_sd + plot_layout(ncol = 1)
 ```
 
+```{r}
+p_pf_vs_rd <- p_dM_vs_avg + p_dM_vs_sd + plot_layout(ncol = 1)
+ggsave(here(res_dir, "shrinkage_vs_randdichot.png"), p_pf_vs_rd, height = 4.5, width = 4, dpi = 600)
+```
+
+
 ```{r, eval = F}
 p_ps_fam_natur <- qs_read(here(out_dir, "dM_ps", "dM.qs2")) %>%
   mutate(region = factor(region, levels = regions)) %>%

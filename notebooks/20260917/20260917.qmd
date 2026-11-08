@@ -114,18 +114,9 @@ write.csv(split_corrs, here(out_dir, "split_corrs.csv"), row.names = F)
 #| fig-cap: "Scatter plots comparing the per-site split-half correlations when onset times are earlier with 100 ms window vs. median with 150 ms window."
 #| fig-height: 4
 #| fig-width: 4.5
-
+regions <- c("V1", "V2", "V4", "IT")
 split_corrs <- here(out_dir, "split_corrs.csv") %>%
   read.csv() 
-
-# earlier 150 ms vs. earlier 100 ms
-# split_corrs %>%
-#   pivot_wider(names_from = ms, values_from = corr, names_prefix = "ms_") %>%
-#   filter(onset_type == "earlier") %>%
-#   mutate(region = factor(region, levels = regions)) %>%
-#   ggplot(aes(x = ms_150, y = ms_100)) + 
-#     geom_point() + 
-#     facet_wrap(vars(region), ncol = 2)
 
 # earlier 100 ms vs. median 150 ms (original)
 split_corrs %>%
@@ -181,6 +172,33 @@ split_corrs %>%
          y = "Pearson's ρ (early onset, 150 ms)") + 
     theme(legend.position = "none")
 ```
+
+### Comparison of shorter and longer windows
+
+```{r}
+#| label: fig-l_windows_vs
+#| fig-cap: "Comparison of split-half correlations for windows of 100 ms and windows of 150 ms. In general, split-half correlations are larger for 150 ms windows, with the difference most prominent in earlier onset times."
+regions <- c("V1", "V2", "V4", "IT")
+split_corrs <- here(out_dir, "split_corrs.csv") %>%
+  read.csv() 
+
+# earlier 150 ms vs. earlier 100 ms
+split_corrs %>%
+  pivot_wider(names_from = ms, values_from = corr, names_prefix = "ms_") %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(onset_type = replace_when(onset_type, 
+    onset_type == "earlier" ~ "Early onset", 
+    onset_type == "median" ~ "Median onset")) %>% 
+  ggplot(aes(x = ms_150, y = ms_100, color = region)) +
+    geom_point() +
+    geom_abline(slope = 1, intercept = 0) +  
+    facet_grid(rows = vars(onset_type), cols = vars(region)) + 
+    labs(
+      x = "Pearson's r (150 ms)", 
+      y = "Pearson's r (100 ms)") + 
+    theme(legend.position = "none")
+```
+
 
 ## Between-family distances 
 

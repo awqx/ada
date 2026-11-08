@@ -1,0 +1,527 @@
+---
+title: "Preprocessing and data visualization figures for the report"
+date: last-modified
+author: Al Xin
+date-format: MMM D, YYYY
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20260928"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+
+```{r}
+stimuli <- read.csv(here("data", "processed", "20260826", "stimuli.csv"))
+regions <- c("V1", "V2", "V4", "IT")
+```
+
+## Onset times
+
+Onset times for the 6 repetition data were calculated in `20260826`. A modified figure with annotated median lines will be saved for the report. 
+
+```{r}
+#| label: fig-onsets_all
+#| fig-cap: "(Left) The number of sites with a calculated onset time given the d' criteria, sorted by region. (Center) The proportion of sites in each region with a calculated onset time. IT has both the lowest absolute number and lowest proportion of valid onset times. (Right) Histograms of the calculated onset times per region, with normalized bar heights."
+#| fig-width: 6
+#| fig-height: 3
+library(patchwork)
+
+onsets_all <- here("data", "processed", "20260826", "onsets_all.RDS") %>%
+  readRDS()
+
+onsets_summary <- sapply(
+  onsets_all, 
+  # subtract one for counting shift
+  function(x) median(x[x < 15], na.rm = T) - 1 )
+onsets_summary <- data.frame(
+  region = regions, 
+  onset = onsets_summary * 10) %>% 
+  mutate(region = factor(region, levels = regions))
+
+onsets_df <- lapply(
+  names(onsets_all), 
+  function(region) 
+    data.frame(region = region, onset = onsets_all[[region]])) %>%
+  do.call(rbind, .) %>%
+  mutate(no_onset = ifelse(is.na(onset), "Missing", "Found")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(no_onset = factor(no_onset, levels = c("Found", "Missing")))
+p_onsets_1 <- ggplot(onsets_df %>% filter(no_onset == "Found"), aes(x = region)) + 
+  geom_bar(fill = palette.colors()[3]) + 
+  labs(y = "Count", x = NULL) + 
+  theme(panel.grid.major.x = element_blank())
+p_onsets_2 <- ggplot(onsets_df, aes(x = region, fill = no_onset)) + 
+  geom_bar(position = "fill") + 
+  labs(fill = "Onset", y = "Proportion", x = NULL) +
+  scale_fill_discrete(palette = c(palette.colors()[3], "gray90")) + 
+  theme(axis.text.y = element_blank(), panel.grid.major = element_blank())
+p_onsets_3 <- onsets_df %>%
+  filter(no_onset == "Found") %>% 
+  mutate(onset = (onset - 1) * 10) %>%
+  ggplot(aes(x = onset, y = ..ncount..)) + 
+    geom_histogram(bins = 12, fill = palette.colors()[2]) + 
+    facet_wrap(vars(region), nrow = 2) + 
+    labs(x = "Inferred onset (ms)", y = NULL) +
+    theme(axis.text.y = element_blank(), panel.grid = element_blank()) + 
+    scale_x_continuous(breaks = 50 * 1:4) + 
+    geom_vline(data = onsets_summary, aes(xintercept = onset), linetype = "dashed") + 
+    geom_text(
+      data = onsets_summary, 
+      mapping = aes(x = onset, y = 0.8, label = paste0(onset, " ms")), 
+      # vjust = "top", 
+      hjust = -0.25, 
+      size = 2.5) + 
+    theme(strip.text = element_text(size = 9))
+p_onsets <- p_onsets_1 + p_onsets_2 + p_onsets_3 + 
+  plot_layout(widths = c(1, 1, 2), ncol = 3)
+p_onsets
+```
+
+```{r}
+ggsave(here(res_dir, "onsets.png"), p_onsets, width = 6, height = 3, dpi = 600)
+```
+
+```{r, eval = F}
+f_nm <- "img_blank001.csv"
+regions <- c("V1", "V2", "V4", "IT")
+
+sd_corrs <- lapply(
+  regions, 
+  function(rgn) {
+    here("data", "processed", "20260826", "split_corrs", rgn, f_nm) %>%
+      read.csv() %>% 
+      apply(1, sd)
+  }
+)
+
+sapply(sd_corrs, mean)
+```  
+
+
+
+```{r}
+#| label: fig-split_corrs
+#| fig-cap: "Normalized histograms of the split-half correlations calculated for each site, averaged across the 20 possible splits. The rows indicate the handling of blank images included in the vectors used for the split-half correlation calculation, with blanks either omitted entirely, aggregated over all repetitions, or separated into 100 instances of 6 repetitions each. Dashed lines mark the median. The distribution of correlations for V1 and IT are more right-skewed. Differences between the number of blank images are slight, though in general, the median correlation is lowest when including separated blank images (with the exception of IT)."
+#| fig-width: 5
+#| fig-height: 3.5
+corrs <- here("results", "20260826", "split_corrs.csv") %>% 
+  read.csv() %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(n_blanks = case_when(
+    n_blanks == 0 ~ "Omitted", 
+    n_blanks == 1 ~ "Aggregated", 
+    n_blanks == 100 ~ "Separated")) %>%
+  mutate(n_blanks = factor(n_blanks, levels = c("Separated", "Aggregated", "Omitted")))
+corrs_summary <- corrs %>%
+  group_by(region, grp_type, n_blanks) %>%
+  summarize(corr = median(corr), .groups = "drop_last")
+
+p_corrs_fam <- ggplot(corrs %>% filter(grp_type == "fam"), aes(x = corr)) + 
+  geom_histogram(aes(y = ..ncount..), bins = 15, fill = palette.colors()[3]) + 
+  geom_vline(
+    data = corrs_summary %>% filter(grp_type == "fam"), 
+    aes(xintercept = corr), linetype = "dotted") + 
+  facet_grid(rows = vars(n_blanks), cols = vars(region)) +
+  labs(y = NULL, x = "Split-half correlation") + 
+  theme(axis.text.y = element_blank(), panel.grid = element_blank())
+
+p_corrs_img <- ggplot(corrs %>% filter(grp_type == "img"), aes(x = corr)) + 
+  geom_histogram(aes(y = ..ncount..), bins = 15, fill = palette.colors()[3]) + 
+  geom_vline(
+    data = corrs_summary %>% filter(grp_type == "img"), 
+    aes(xintercept = corr), linetype = "dotted") + 
+  facet_grid(rows = vars(n_blanks), cols = vars(region)) +
+  labs(y = NULL, x = "Split-half correlation") + 
+  theme(axis.text.y = element_blank(), panel.grid = element_blank())
+
+p_corrs_img
+```
+
+```{r}
+ggsave(here(res_dir, "split_corrs_blanks.png"), p_corrs_img, width = 5, height = 3.5, dpi = 600)
+```
+
+
+```{r}
+#| label: fig-corrs_ecdf
+#| fig-cap: "Empirical cumulative distribution functions for the split-half correlations by region. Data reflects split-half correlations performed when all blanks are averaged. (Left) Aggregated by sample image. (Right) Aggregated by family. For non-IT regions, the correlations tend to concentrate at above 0.8."
+#| fig-width: 4
+#| fig-height: 2.5
+
+# p_ecdf <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+#   mutate(region = factor(region, levels = regions)) %>%
+#   filter(grp_type == "img", n_blanks == 1) %>%
+#   ggplot(aes(x = corr, color = region)) + 
+#   stat_ecdf() + 
+#   labs(x = "Correlation", y = "Empirical cumulative probability", color = "Region")
+
+p_ecdf <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(n_blanks == 1) %>%
+  mutate(
+    grp_label = case_when(
+      grp_type == "fam" ~ "Within family", 
+      grp_type == "img" ~ "By image")) %>%
+  ggplot(aes(x = corr, color = region)) + 
+    stat_ecdf() + 
+    facet_wrap(vars(grp_label), ncol = 2) + 
+    labs(
+      x = "Correlation", 
+      y = "Empirical cumulative probability", 
+      color = "Region")
+
+p_ecdf
+# ggsave(here(res_dir, "split_corrs_ecdf.png"), width = 3.5, height = 3, dpi = 600)
+```
+
+```{r}
+#| label: fig-corrs
+#| fig-cap: "Empirical cumulative distribution functions (left) and histograms (right) for the split-half correlations by region. Data reflects split-half correlations performed when all blanks are averaged. V1 and IT are right-skewed, V2 is left-skewed, and V4 has a somewhat bimodal distribution for low- and high-correlations."
+#| fig-width: 5.5
+#| fig-height: 2.75
+library(patchwork)
+regions <- c("V1", "V2", "V4", "IT")
+p_ecdf <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(n_blanks == 1) %>%
+  filter(grp_type == "img") %>%
+  ggplot(aes(x = corr, color = region)) + 
+    stat_ecdf() + 
+    labs(
+      x = "Pearson's ρ", 
+      y = "Empirical cumulative probability", 
+      color = "Region") + 
+  theme(legend.position = "none")
+
+p_corrs_img <-  read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(n_blanks == 1, grp_type == "img") %>%
+  ggplot(aes(x = corr, fill = region)) + 
+    geom_histogram(aes(y = ..ncount..), bins = 15) + 
+    labs(y = NULL, x = "Split-half correlation (Pearson's ρ)", fill = NULL) + 
+    facet_wrap(vars(region)) + 
+    theme(axis.text.y = element_blank(), panel.grid = element_blank(), legend.position = "right")
+
+p_corrs <- p_ecdf + p_corrs_img + plot_layout(ncol = 2, widths = c(1, 1.2))
+p_corrs
+```
+
+```{r, eval = F}
+ggsave(here(res_dir, "split_corrs_distribution.png"), p_corrs, height = 2.75, width = 5.5, dpi = 600)
+```
+
+
+## Onset times on reliable sites
+
+As a reminder, the onsets in @fig-onsets_all (which informed the averaging in @fig-split_corrs) were taken over all sites. We can sanity check if the onset times change based on the reliable site calculation. Overall, I think it makes sense to retain the temporary onset times unless there's evidence that it changes a lot (more than 30 ms). 
+
+Taking sites above a split-half correlation of 0.4 or taking sites in the 80th percentile of correlations doesn't move the onset time much, though it gets very slightly earlier in V2 for the percentile cutoff. 
+
+Thus, I'll use the averages calculated according to the temporary onset times. 
+
+```{r, eval = F}
+library(cli)
+source(here("R", "onset_time.R"))
+
+corr_threshold <- 0.4
+regions <- c("V1", "V2", "V4", "IT")
+stimuli <- read.csv(here(out_dir, "stimuli.csv"))
+
+thresh_sites <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(grp_type == "img", n_blanks == 1) %>%
+  mutate(incl = corr > corr_threshold)
+thresh_sites <- lapply(regions, 
+  function(rgn) thresh_sites %>% filter(region == rgn) %>% .$incl)
+
+prcnt_sites <- read.csv(here(res_dir, "split_corrs.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  filter(grp_type == "img", n_blanks == 1) %>%
+  group_by(region) %>%
+  mutate(prcnt = percent_rank(corr)) %>%
+  mutate(incl = prcnt > 0.8)
+prcnt_sites <- lapply(regions, 
+  function(rgn) prcnt_sites %>% filter(region == rgn) %>% .$incl)
+
+onset_grp <- list(stimuli$coherence == 0, stimuli$coherence != 0)
+onsets_corr_thresh <- lapply(
+  cli_progress_along(regions), 
+  function(i) {
+    region <- regions[i]
+    mua <- qs_read(here(data_dir, paste0(region, ".qs2")))
+    onset_time(mua[, 50:70, thresh_sites[[i]]], onset_grp, all_times = T)})
+names(onsets_corr_thresh) <- regions
+
+onsets_corr_prcnt <- lapply(
+  cli_progress_along(regions), 
+  function(i) {
+    region <- regions[i]
+    mua <- qs_read(here(data_dir, paste0(region, ".qs2")))
+    onset_time(mua[, 50:70, prcnt_sites[[i]]], onset_grp, all_times = T)})
+names(onsets_corr_prcnt) <- regions
+
+saveRDS(onsets_corr_prcnt, file.path(out_dir, "onsets_corr_prcnt.RDS"))
+
+list(onsets_all, onsets_corr_thresh, onsets_corr_prcnt) %>% 
+  lapply(function(x) 10 * (sapply(x, median, na.rm = T) - 1)) %>% 
+  do.call(cbind, .)
+```
+
+## Pairwise between-family Mahalanobis distance
+
+For now, let's take a somewhat arbitrary "matched-reliability" criteria of sites with split-half correlation between 0.3 and 0.6. This yields 39 sites in V1, 49 sites in V2, 57 sites in V4, and 53 sites in IT. I chose this criteria because the slopes of the lines in @fig-corrs_ecdf look fairly similar within this window. 
+
+@fig-dM_dist shows the results from a single arbitrary subsample of 30 sites from each region alongside the split-half correlations for each site for reference. 
+
+```{r}
+#| label: fig-dM_dist
+#| fig-cap: "(Left) Violin plots of the pairwise between-family Mahalanobis distances, showing a trend of increasing distance with higher visual areas. The plots for noisy textures are included for a comparison, showing noisy distances tend to be shorter with no obvious trend between areas. (Right) The split-half correlations of the sites included in the left violin plots show differences in distributions between regions. However, the trends in these distributions do not seem to be aligned with the trends in the naturalistic Mahalanobis distances."
+#| fig-width: 6
+#| fig-height: 3
+
+temp_dir <- here("data", "processed", "20260826")
+p_dM_1 <- rbind(
+  read.csv(here(temp_dir, "dM_pf", "natur.csv")) %>% 
+    mutate(coherence = "Natur."), 
+  read.csv(here(temp_dir, "dM_pf", "noisy.csv")) %>% 
+    mutate(coherence = "Noisy")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = factor(coherence, levels = c("Natur.", "Noisy"))) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Matched reliability between-family comparisons", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+
+p_dM_2 <- read.csv(here(temp_dir, "dM_pf", "site_corr.csv")) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  ggplot(aes(region, corr)) + 
+    geom_violin(trim = F, alpha = 0.5, fill = palette.colors()[5]) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    # facet_grid(cols = vars(coherence)) + 
+    # scale_fill_discrete(palette = c(palette.colors()[5], palette.colors()[6])) + 
+    labs(
+      x = NULL, 
+      y = "Split-half correlation", 
+      title = NULL, 
+      fill = NULL) + 
+    theme(legend.position = "none")
+
+p_dM_1 + p_dM_2 + plot_layout(widths = c(2, 1))
+```
+```{r}
+#| label: fig-dM_ps
+#| fig-cap: "Violin plots comparing the distributions of Mahalanobis distances for the randomized dichotomies approach (top) and the pairwise between-sample distances found with the Ledoit-Wolf shrinkage estimator."
+#| fig-width: 4
+#| fig-height: 4
+regions <- c("V1", "V2", "V4", "IT")
+# rbind(
+#   qs_read(here("data", "processed", "20260826", "dM_rd", "dM.qs2")) %>%
+#     filter(cov_est == "shrinkage") %>%
+#     select(multi_d, coherence, region, family) %>%
+#     mutate(method = "Randomized dichotomies"), 
+#   qs_read(here("data", "processed", "20260909", "dM_ps", "dM.qs2")) %>%
+#     select(multi_d, coherence, region, family) %>%
+#     mutate(method = "Shrinkage covariance")) 
+p_dM_ps <- here("data", "processed", "20260909", "dM_ps", "dM.qs2") %>%
+  qs_read() %>%
+  select(multi_d, coherence, region, family) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = case_when(
+    coherence == "natur" ~ "Naturalistic", 
+    coherence == "noisy" ~ "Noisy")) %>%
+  ggplot(aes(region, multi_d, fill = coherence)) + 
+    geom_violin(trim = F, alpha = 0.5) + 
+    geom_boxplot(width = 0.1, fill = "white") + 
+    facet_grid(cols = vars(coherence)) + 
+    labs(
+      x = NULL, 
+      y = "Mahalanobis distance", 
+      title = "Matched reliability between-sample comparisons", 
+      fill = NULL) + 
+  theme(legend.position = "none") + 
+  scale_fill_discrete(palette = c(palette.colors()[3], palette.colors()[8]))
+p_dM_ps 
+```
+
+```{r}
+p_dM_pf <- p_dM_1 + p_dM_2 + plot_layout(widths = c(2, 1))
+ggsave(here(res_dir, "dM_pf.png"), p_dM_pf, width = 6, height = 3, dpi = 600)
+
+ggsave(here(res_dir, "dM_ps.png"), p_dM_ps, width = 4, height = 3, dpi = 600)
+```
+
+```{r}
+it_high <- corrs %>% 
+  filter(region == "IT", grp_type == "img") %>%
+  filter(corr > 0.8) %>%
+  .$site
+# it_mua <- qs_read(here("data", "processed", "20260625", "IT.qs2"))
+cutoffs <- 0:4 * 0.2
+
+mua_psth <- function(
+  mua,
+  l_idx = 50,
+  u_idx = 100,
+  incl_stims = NULL,
+  incl_sites = NULL
+) {
+  if (is.null(incl_sites))
+    incl_sites <- 1:dim(mua)[3]
+  if (is.null(incl_stims))
+    incl_stims <- 1:dim(mua)[1]
+  mua <- mua[incl_stims, l_idx:u_idx, incl_sites]
+  
+  psths <- lapply(0:2, function(x)
+    apply(mua[stimuli$coherence[incl_stims] == x, , ], 2, mean)) %>%
+    do.call(cbind, .) %>%
+    data.frame()
+  colnames(psths) <- c("blank", "noisy", "natur")
+  psths <- psths %>%
+    mutate(t = 10 * c(0:(u_idx - l_idx))) %>%
+    pivot_longer(-t, names_to = "coherence", values_to = "mua")
+}
+
+
+
+it_psth_cutoffs <- lapply(
+  cutoffs, 
+  function(x) {
+    idx <- corrs %>% 
+      filter(region == "IT", grp_type = "img") %>%
+      filter(corr > x) %>%
+      .$site
+    it_mua %>%
+      mua_psth(incl_sites = idx) %>%
+      mutate(cutoff = x)}) %>%
+  do.call(rbind, .)
+# 
+# it_psth <- it_mua %>%
+#   mua_psth(incl_sites = it_high) %>%
+#   mutate(region = "IT")
+```
+
+```{r}
+it_psth_cutoffs <- lapply(
+  cutoffs, 
+  function(x) {
+    idx <- corrs %>% 
+      filter(region == "IT", grp_type == "img") %>%
+      filter(corr > x) %>%
+      .$site
+    it_mua %>%
+      mua_psth(incl_sites = idx) %>%
+      mutate(cutoff = x)}) %>%
+  do.call(rbind, .)
+
+it_psth_cutoffs %>%
+  mutate(mua = mua * 100) %>%
+  mutate(cutoff = paste0("Corr. >= ", cutoff)) %>%
+  mutate(cutoff = factor(cutoff)) %>%
+  mutate(coherence = replace_values(
+    coherence,
+    "blank" ~ "Blank",
+    "natur" ~ "Naturalistic",
+    "noisy" ~ "Noisy" )) %>%
+  ggplot(aes(x = t, y = mua, color = coherence)) +
+    geom_line() +
+    # facet_wrap(vars(region), scales = "free_y", nrow = 1) +
+    facet_wrap(vars(cutoff), scales = "fixed", nrow = 1) + 
+    # geom_hline(yintercept = 0, style = "dotted") + 
+    labs(
+      color = "Stimulus type", 
+      y = "Response rate (imp/s)", 
+      x = "Time from stimulus (ms)")
+```
+
+
+```{r}
+library(cli)
+regions <- c("V1", "V2", "V4", "IT")
+params <- expand.grid(
+  region = c("V1", "V2", "V4", "IT"), 
+  cutoff = cutoffs)
+
+mua_list <- lapply(
+  regions, 
+  function(rgn) {
+    qs_read(here("data", "processed", "20260625", paste0(rgn, ".qs2")))})
+names(mua_list) <- regions
+
+psth_cutoffs <- lapply(
+  cli_progress_along(1:nrow(params)), 
+  function(i) {
+    rgn <- params[i, "region"]
+    x <- params[i, "cutoff"]
+    idx <- corrs %>% 
+      filter(region == rgn, grp_type == "img") %>%
+      filter(corr > x) %>%
+      .$site
+    mua_list[[rgn]] %>%
+      mua_psth(incl_sites = idx) %>%
+      mutate(cutoff = x, region = rgn) }) %>%
+  do.call(rbind, .)
+
+psth_cutoffs %>%
+  mutate(mua = mua * 100) %>%
+  mutate(cutoff = paste0("Corr. >= ", cutoff)) %>%
+  mutate(cutoff = factor(cutoff)) %>%
+  mutate(region = factor(region, levels = regions)) %>%
+  mutate(coherence = replace_values(
+    coherence,
+    "blank" ~ "Blank",
+    "natur" ~ "Naturalistic",
+    "noisy" ~ "Noisy" )) %>%
+  ggplot(aes(x = t, y = mua, color = coherence)) +
+    geom_line() +
+    # facet_wrap(vars(region), scales = "free_y", nrow = 1) +
+    facet_grid(rows = vars(region), cols = vars(cutoff), scales = "fixed") + 
+    # geom_hline(yintercept = 0, style = "dotted") + 
+    labs(
+      color = "Stimulus type", 
+      y = "Response rate (imp/s)", 
+      x = "Time from stimulus (ms)")
+```
+
