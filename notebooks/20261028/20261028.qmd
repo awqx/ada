@@ -1,0 +1,882 @@
+---
+title: "Inter-region sparsity experiments"
+date: last-modified
+author: Al Xin
+date-format: MMM D, YYYY
+bibliography: ../../reports/refs.bib
+csl: ../../reports/nlm.csl
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+        \input{../../reports/statscmds.tex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20261028"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+```{r}
+dat <- here("data", "processed", "20260917", "avgs", "median_150.qs2") %>%
+  qs_read()
+regions <- c("V1", "V2", "V4", "IT")
+stimuli <- here("data", "processed", "20260826", "stimuli.csv") %>%
+  read.csv() %>%
+  group_by(coherence, family, id) %>%
+  mutate(grp = cur_group_id())
+nonblank_idx <- stimuli$coherence > 0
+blank_idx <- stimuli$coherence == 0
+img_grp <- stimuli$grp 
+fam_grp <- stimuli$family
+```
+
+```{r}
+source(here("R", "avg_by_grp.R"))
+source(here("R", "sparsity.R"))
+source(here("R", "label_arrays.R"))
+```
+
+## Last seen on ADA...
+
+### Sparsity measures
+
+In neuroscience, a common lifetime sparsity measure  is the ratio of moments (call this the "RM" estimator) (Rolls and Tovee, 1995; Vinje and Gallant, 2000):
+$$
+S_{\textrm{RM}} = \left( 1 - \frac{\left( \frac{1}{n} \sum_{i = 1}^n r_i \right)^2}{\frac{1}{n} \sum_{i = 1}^n r_i^2} \right) \left( \frac{1}{1 - \frac{1}{n}} \right).
+$$
+The term $\left( \frac{1}{1 - \frac{1}{n}} \right)$ scales the above to $[0, 1]$, with 0 indicating uniformity and 1 indicating maximal concentration. 
+
+The above has some relationship with the $pq$-mean sparsity measure described by Hurley and Rickard (2009), 
+$$
+S_{pq} = - \frac{\left( \frac{1}{n} \sum_{i = 1}^n r_i^p \right)^{1 / p}}{\left( \frac{1}{n} \sum_{i = 1}^n r_i^q \right)^{1/q}}.
+$$
+The $pq$-mean sparsity fulfils the "cloning" principle of a sparsity measure, i.e., that the measure, when evaluated on a duplicate of the original population, will produce the same sparsity. Unfortunately, previously mentioned $S_{\textrm{RM}}$ is not invariant to cloning, which makes it unsuitable for between region population sparsity comparisons. It is still usable for per-site comparisons (since the number of presented images is the same for all sites). As another consideration, the $pq$-mean is not as conveniently bounded by $[0, 1]$. 
+
+As another concern, most sparsity measures cannot be calculated when negative values exist in the data. As discussed previously, it might be useful to consider deviation away from baseline when calculating sparsity rather than deviation from zero. Thus, one might want to apply the Hoyer sparsity measure, defined as
+$$
+S_{\textrm{Hoyer}} = \frac{1}{\sqrt{n} - 1} \left( \sqrt{n} - \frac{\sum_{i = 1}^n | \mu_i|}{\sqrt{\sum_{i = 1}^n \mu_i^2}} \right),
+$$
+which, besides cloning, fills the remaining 5 of Hurley and Rickard's listed desiderata. Furthermore, it is bounded by $[0, 1]$, with $0$ indicating complete uniformity and $1$ indicating a single non-zero value. 
+
+
+## Below baseline values
+
+```{r}
+centered <- qs_read(here("data", "processed", "20261007", "centered.qs2"))
+```
+
+After subtracting the baseline firing, the centered firings show prominent between region differences, with reliable IT sites tending to show more below baseline firing rates (@fig-centered). 
+
+```{r}
+centered <- here("data", "processed", "20261007", "centered.qs2") %>%
+  qs_read()
+
+avgs_long <- function(avgs) {
+  lapply(
+    regions, 
+    function(region) {
+      avgs[[region]] %>%
+        pivot_longer(!avg_grp, names_to = "site", values_to = "firing") %>%
+        mutate(
+          region = region, 
+          site = as.integer(gsub("V", "", site))) }) %>%
+    do.call(rbind, .) %>%
+    order_regions()
+}
+
+region_avgs <- function(dat, avg_grp, incl_idx = NULL) {
+  res <- lapply(
+    regions, 
+    function(region) {
+      res <- dat[[region]] %>%
+        as_tibble() %>%
+        avg_by_grp(avg_grp, incl_idx, return_grp = T) }) 
+  names(res) <- regions
+  res
+}
+```
+
+```{r, eval = F}
+region_avgs(centered, img_grp, nonblank_idx) %>%
+  qs_save(here(out_dir, "centered_img.qs2"))
+region_avgs(centered, fam_grp, nonblank_idx) %>%
+  qs_save(here(out_dir, "centered_fam.qs2"))
+```
+
+```{r}
+#| label: fig-centered
+#| fig-cap: "Heat maps of centered/baseline subtracted firing rates, as (top) averaged over specific image repetitions or (bottom) averaged over families. IT shows more sites with below baseline firing. Only sites with split-half correlations > 0.2 are show. See the appendix for all sites."
+#| fig-width: 5
+#| fig-height: 4
+library(patchwork)
+
+split_corrs <- here("data", "processed", "20260917", "split_corrs.csv") %>%
+  read.csv() %>%
+  filter(onset_type == "median", ms == 150) %>%
+  select(-onset_type, -ms)
+
+centered_img <- here(out_dir, "centered_img.qs2") %>% 
+  qs_read() %>%
+  avgs_long() %>%
+  full_join(split_corrs, by = c("region", "site")) %>%
+  filter(corr > 0.2) %>%
+  order_regions()
+centered_fam <- here(out_dir, "centered_fam.qs2") %>% 
+  qs_read() %>%
+  avgs_long() %>%
+  full_join(split_corrs, by = c("region", "site")) %>%
+  filter(corr > 0.2) %>%
+  order_regions()
+
+label_firing <- function(x) {
+  case_when(
+    x < 0 ~ "< 0 Hz", 
+    x < 0.5 ~ "< 50 Hz",
+    x >= 0.5 ~ "50+ Hz" )}
+
+p_img <- centered_img %>%
+  mutate(
+    avg_grp = as.numeric(as.factor(avg_grp)), 
+    nm = label_firing(firing)) %>%
+  group_by(region, avg_grp) %>%
+  mutate(site = row_number()) %>%
+  ggplot(aes(x = site, y = avg_grp, fill = nm)) + 
+  geom_raster() + 
+  facet_wrap(vars(region), nrow = 1) + 
+  scale_fill_discrete(
+    palette = scales::pal_viridis(begin = 0.3, end = 0.9, option = "A")) + 
+  labs(
+    x = NULL,
+    y = "Image", 
+    fill = "Centered firing") + 
+  theme(
+    legend.position = "none", 
+    panel.grid = element_blank(), 
+    axis.text = element_blank())
+
+p_fam <- centered_fam %>%
+  mutate(
+    avg_grp = as.numeric(as.factor(avg_grp)), 
+    nm = label_firing(firing)) %>%
+  group_by(region, avg_grp) %>%
+  mutate(site = row_number()) %>%
+  ggplot(aes(x = site, y = avg_grp, fill = nm)) + 
+  geom_raster() + 
+  facet_wrap(vars(region), nrow = 1) +
+  scale_fill_discrete(
+    palette = scales::pal_viridis(begin = 0.3, end = 0.9, option = "A")) + 
+  labs(
+    x = "Site", 
+    y = "Family", 
+    fill = "Centered firing") + 
+  theme(
+    strip.text = element_blank(), 
+    legend.position = "bottom", 
+    panel.grid = element_blank(), 
+    axis.text = element_blank())
+
+p_img + p_fam + plot_layout(heights = c(2, 1), ncol = 1)
+```
+
+### Separate sparsities for positive and negative firings
+
+```{r}
+#| label: fig-split_sparsities
+#| fig-cap: "(Top) Histograms of site sparsities, calculated on the absolute value of centered firing (magnitude), only non-negative centered firing (positive), or only negative centered firing values (negative). (Middle) For V1, V4, and IT, each array shows distinct clusters of negative firing and positive firing sparsity patterns. (Bottom) Labeling sites by split-half correlation shows the same clustering."
+#| fig-width: 6
+#| fig-height: 6.5
+centered_img <- here(out_dir, "centered_img.qs2") %>% 
+  qs_read()
+
+split_sparsities <- function(dat, sparsity_method, ...) {
+  pos_sparsities <- lapply(
+    regions, 
+    function(region) {
+      apply(
+        dat[[region]] %>% select(-avg_grp), 2, 
+        function(site) {
+          if (sum(site >= 0) < 4) return(NA)
+          sparsity_method(site[site >= 0], ...)
+        }) %>%
+    tibble::as_tibble_col(column_name = "sparsity") %>%
+    mutate(site = row_number(), region = region) }) %>%
+    do.call(rbind, .) %>%
+    mutate(cardinality = "Positive")
+  neg_sparsities <- lapply(
+    regions, 
+    function(region) {
+      apply(
+        dat[[region]] %>% select(-avg_grp), 2, 
+        function(site) {
+          if (sum(site < 0) < 4) return(NA)
+          sparsity_method(abs(site[site < 0]), ...)
+        }) %>%
+    tibble::as_tibble_col(column_name = "sparsity") %>%
+    mutate(site = row_number(), region = region) }) %>%
+    do.call(rbind, .) %>%
+    mutate(cardinality = "Negative")
+  abs_sparsities <- lapply(
+    regions, 
+    function(region) {
+      apply(
+        dat[[region]] %>% select(-avg_grp), 2, 
+        function(site) {
+          sparsity_method(abs(site), ...)
+        }) %>%
+    tibble::as_tibble_col(column_name = "sparsity") %>%
+    mutate(site = row_number(), region = region) }) %>%
+    do.call(rbind, .) %>%
+    mutate(cardinality = "Magnitude")
+  
+  rbind(pos_sparsities, neg_sparsities, abs_sparsities)
+}
+
+sparsities <- split_sparsities(centered_img, rm_sparsity)
+sp_summary <- sparsities %>%
+  group_by(cardinality, region) %>%
+  summarize(sparsity = median(sparsity, na.rm = T), .groups = "drop") %>%
+  mutate(cardinality = factor(cardinality, levels = c("Magnitude", "Positive", "Negative"))) %>%
+  order_regions() 
+
+p_hist <- sparsities %>%
+  order_regions() %>%
+  mutate(cardinality = factor(cardinality, levels = c("Magnitude", "Positive", "Negative"))) %>%
+  ggplot(aes(x = sparsity, y = ..ndensity.., fill = region)) + 
+    geom_histogram(bins = 20) + 
+    facet_grid(rows = vars(cardinality), cols = vars(region)) + 
+    geom_vline(data = sp_summary, aes(xintercept = sparsity), linetype = "dotted") + 
+    labs(x = "RM sparsity", y = NULL) + 
+    scale_x_continuous(breaks = 0:2 * 0.3) + 
+    theme(
+      panel.grid.minor = element_blank(), 
+      legend.position = "none", axis.text.y = element_blank())
+
+p_dot <- sparsities %>%
+  order_regions() %>%
+  pivot_wider(names_from = cardinality, values_from = sparsity) %>%
+  label_arrays() %>%
+  ggplot(aes(x = Positive, y = Negative, color = array, shape = array)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+    labs(shape = "Array", color = "Array") + 
+    theme(
+      panel.spacing = unit(1, "lines"), 
+      panel.grid.minor = element_blank(), 
+      legend.position = "right")
+
+p_corr <- sparsities %>%
+  full_join(split_corrs, by = c("region", "site")) %>%
+  mutate(
+    corr_cutoff = case_when(
+      corr < 0.2 ~ "< 0.2", 
+      corr < 0.5 ~ "< 0.5", 
+      corr > 0.5 ~ "0.5+" )) %>%
+  pivot_wider(names_from = cardinality, values_from = sparsity) %>%
+  label_arrays() %>%
+  order_regions() %>%
+  ggplot(aes(x = Positive, y = Negative, color = corr_cutoff, shape = corr_cutoff)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(begin = 0.3, end = 0.8, option = "B")) +
+    labs(shape = "Split corr.", color = "Split corr.") + 
+    theme(
+      panel.spacing = unit(1, "lines"), 
+      panel.grid.minor = element_blank(), 
+      legend.position = "right")
+
+p_hist + p_dot + p_corr + plot_layout(ncol = 1, heights = c(1.5, 1, 1)) 
+```
+
+## Sparsities on log ratios
+
+```{r, eval = F}
+dat <- here("data", "processed", "20260917", "avgs", "median_150.qs2") %>%
+  qs_read()
+ordered_img_grp <- here(out_dir, "centered_img.qs2") %>%
+  qs_read() %>%
+  .[["V1"]] %>%
+  .$avg_grp
+
+log_ratio <- lapply(
+  regions, 
+  function(region) { 
+    dat[[region]] %>%
+      as_tibble() %>%
+      avg_by_grp(img_grp, nonblank_idx) %>%
+      sweep(2, colMeans(dat[[region]][blank_idx, ]), "/") %>%
+      log() %>%
+      mutate(avg_grp = ordered_img_grp) })
+names(log_ratio) <- regions
+log_ratio %>%
+  qs_save(here(out_dir, "ln_ratio_img.qs2"))
+
+log_ratio <- lapply(
+  regions, 
+  function(region) { 
+    dat[[region]] %>%
+      as_tibble() %>%
+      avg_by_grp(img_grp, nonblank_idx) %>%
+      sweep(2, colMeans(dat[[region]][blank_idx, ]), "/") %>%
+      log2() %>%
+      mutate(avg_grp = ordered_img_grp) })
+names(log_ratio) <- regions
+log_ratio %>%
+  qs_save(here(out_dir, "log2_ratio_img.qs2"))
+```
+
+```{r, eval = T}
+#| label: fig-centered_lr
+#| fig-cap: "(Top) Heat maps of log (firing / baseline), as averaged over specific image. IT shows more sites with below baseline firing. Only sites with split-half correlations > 0.2 are show. (Bottom) Scatter plots of Hoyer sparsity vs. reliability. Only sites with split-half correlations > 0.2 are show."
+#| fig-width: 5
+#| fig-height: 4
+library(patchwork)
+
+split_corrs <- here("data", "processed", "20260917", "split_corrs.csv") %>%
+  read.csv() %>%
+  filter(onset_type == "median", ms == 150) %>%
+  select(-onset_type, -ms)
+
+log_ratio_img <- here(out_dir, "log2_ratio_img.qs2") %>% 
+  qs_read() %>%
+  avgs_long() %>%
+  full_join(split_corrs, by = c("region", "site")) 
+
+label_firing <- function(x) {
+  case_when(
+    x < 0 ~ "< 0", 
+    x < 0.5 ~ "< 0.5",
+    x < 1.0 ~ "< 1.0",
+    x >= 1.0 ~ "1.0+" )}
+
+p_img <- log_ratio_img %>%
+  filter(corr > 0.2) %>%
+  order_regions() %>%
+  mutate(
+    avg_grp = as.numeric(as.factor(avg_grp)), 
+    nm = label_firing(firing)) %>%
+  group_by(region, avg_grp) %>%
+  mutate(site = row_number()) %>%
+  ggplot(aes(x = site, y = avg_grp, fill = nm)) + 
+  geom_raster() + 
+  facet_wrap(vars(region), nrow = 1) + 
+  scale_fill_discrete(
+    palette = scales::pal_viridis(begin = 0.2, end = 0.9, option = "A")) + 
+  labs(
+    x = NULL,
+    y = "Image", 
+    fill = "Log2 ratio") + 
+  theme(
+    legend.position = "right", 
+    panel.grid = element_blank(), 
+    axis.text = element_blank())
+
+dat <- here(out_dir, "log2_ratio_img.qs2") %>% 
+  qs_read()
+log_ratio_sparsity <- lapply(
+  regions, 
+  function(region) {
+    dat[[region]] %>% 
+      as_tibble() %>%
+      select(-avg_grp) %>%
+      apply(2, Lp_sparsity) %>%
+    tibble::as_tibble_col(column_name = "sparsity") %>%
+    mutate(site = row_number(), region = region) }) %>%
+  do.call(rbind, .)  %>%
+  full_join(split_corrs, by = c("region", "site")) 
+
+p_corr <- log_ratio_sparsity %>%
+  filter(corr > 0.2) %>%
+  label_arrays() %>%
+  order_regions() %>%
+  ggplot(aes(y = sparsity, x = corr, color = array, shape = array)) + 
+  geom_point(alpha = 0.4) + 
+  facet_wrap(vars(region), nrow = 1) + 
+  scale_color_discrete(
+    palette = scales::pal_viridis(end = 0.8, direction = -1, option = "D")) + 
+  labs(
+    x = "Split-half correlation",
+    y = "Hoyer sparsity on log ratio", 
+    shape = "Array", color = "Array") + 
+  theme(
+    legend.position = "right", 
+    panel.grid = element_blank())
+
+p_img + p_corr + plot_layout(ncol = 1, heights = c(1.5, 1))
+```
+
+$$
+\nu_i = \log_2 \frac{\mu_{i}}{\mu_{\textrm{baseline}}}
+$$
+
+```{r}
+#| label: fig-lr_split
+#| fig-cap: "(Top) Scatter plots comparing sparsities calculated on only negative vs. only positive log ratios. (Bottom) Sparsity vs. correlation plots for each category of log ratios (only negatives, only positives, all magnitudes)"
+#| fig-width: 5
+#| fig-height: 6
+dat <- here(out_dir, "log_ratio_img.qs2") %>% 
+  qs_read()
+lr_sparsity_split <- split_sparsities(dat, Lp_sparsity) %>%
+  order_regions() %>%
+  label_arrays() %>%
+  full_join(split_corrs, by = c("region", "site"))
+  
+p_split_1 <- lr_sparsity_split %>%
+  filter(corr > 0.2) %>%
+  pivot_wider(names_from = cardinality, values_from = sparsity) %>%
+  order_regions() %>%
+  ggplot(aes(x = Positive, y = Negative, color = array, shape = array)) + 
+    geom_point(alpha = 0.4) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+    labs(shape = NULL, color = NULL) + 
+    theme(
+      panel.grid.minor = element_blank())
+
+p_split_2 <- lr_sparsity_split  %>%
+  filter(corr > 0.2) %>%
+  order_regions() %>%
+  mutate(cardinality = factor(cardinality, levels = c("Magnitude", "Positive", "Negative"))) %>%
+  ggplot(aes(x = corr, y = sparsity, color = array, shape = array)) + 
+    geom_point(alpha = 0.4) +
+    facet_grid(cols = vars(region), rows = vars(cardinality), scales = "free_y") + 
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+    labs(x = "Split half correlation", y = "Hoyer sparsity", shape = NULL, color = NULL) + 
+    theme(
+      panel.grid.minor = element_blank())
+
+p_split_1 + p_split_2 + plot_layout(ncol = 1, heights = c(1, 3))
+```
+
+```{r, eval = F}
+#| fig-width: 6
+#| fig-height: 3
+lr_sparsity_split %>%
+  mutate(spbrown = 2 * corr / (1 + corr)) %>%
+  filter(spbrown > 0.2, cardinality == "Magnitude") %>%
+  order_regions() %>%
+  ggplot(aes(x = corr, y = sparsity, color = array, shape = array)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(begin = 0.2, end = 0.85, direction = -1)) +
+    labs(
+      x = "Site reliability (Spearman-Brown corrected Pearson's r)", 
+      y = "Hoyer sparsity", 
+      shape = "Array", 
+      color = "Array") + 
+    theme_minimal(base_size = 11) + 
+    theme(
+      axis.title.x = element_text(margin = unit(c(4, 0, 0, 0), "mm")),
+      axis.title.y = element_text(margin = unit(c(0, 4, 0, 0), "mm")),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank())
+
+# ggsave(here(res_dir, "lr_hoyer_corr.png"), width = 6, height = 3, dpi = 600)
+
+lr_sparsity_split %>%
+  mutate(spbrown = 2 * corr / (1 + corr)) %>%
+  filter(cardinality == "Magnitude") %>%
+  order_regions() %>%
+  ggplot(aes(x = corr, y = sparsity, color = array, shape = array)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(begin = 0.2, end = 0.85, direction = -1)) +
+    labs(
+      x = "Split half correlation (Spearman-Brown corrected)", 
+      y = "Hoyer sparsity", 
+      shape = "Array", 
+      color = "Array") + 
+    theme(
+      legend.position = "bottom",
+      panel.grid.minor = element_blank())
+
+# ggsave(here(res_dir, "lr_hoyer_corr_all.png"), width = 6, height = 3, dpi = 600)
+```
+
+
+## Appendix
+
+### Heat maps
+
+```{r}
+#| label: fig-centered_full
+#| fig-cap: "Heat maps of centered/baseline subtracted firing rates, as (top) averaged over specific image repetitions or (bottom) averaged over families. IT shows more sites with below baseline firing."
+#| fig-width: 5
+#| fig-height: 4
+library(patchwork)
+
+label_firing <- function(x) {
+  case_when(
+    x < 0 ~ "< 0 Hz", 
+    x < 0.5 ~ "< 50 Hz",
+    x >= 0.5 ~ "50+ Hz" )}
+
+p_img <- here(out_dir, "centered_img.qs2") %>%
+  qs_read() %>%
+  avgs_long() %>%
+  mutate(
+    avg_grp = as.numeric(as.factor(avg_grp)), 
+    nm = label_firing(firing)) %>%
+  ggplot(aes(x = site, y = avg_grp, fill = nm)) + 
+  geom_raster() + 
+  facet_wrap(vars(region), nrow = 1) +
+  scale_fill_discrete(palette = scales::pal_viridis(begin = 0.3)) + 
+  labs(
+    x = NULL,
+    y = "Image", 
+    fill = "Centered firing") + 
+  theme(
+    legend.position = "none", 
+    panel.grid = element_blank(), 
+    axis.text = element_blank())
+
+p_fam <- here(out_dir, "centered_img.qs2") %>%
+  qs_read() %>%
+  avgs_long() %>%
+  mutate(
+    avg_grp = as.numeric(as.factor(avg_grp)), 
+    nm = label_firing(firing)) %>%
+  ggplot(aes(x = site, y = avg_grp, fill = nm)) + 
+  geom_raster() + 
+  facet_wrap(vars(region), nrow = 1) +
+  scale_fill_discrete(palette = scales::pal_viridis(begin = 0.3)) + 
+  labs(
+    x = "Site", 
+    y = "Family", 
+    fill = "Centered firing") + 
+  theme(
+    strip.text = element_blank(), 
+    legend.position = "bottom", 
+    panel.grid = element_blank(), 
+    axis.text = element_blank())
+
+p_img + p_fam + plot_layout(heights = c(2, 1), ncol = 1)
+```
+
+### Different sparsity measures
+
+```{r}
+#| label: "fig-split_pq"
+#| fig-caption: "pq-mean sparsity calculated on positive/negative centered firings (not log ratio)."
+#| fig-width: 6
+#| fig-height: 3.5
+sparsities <- split_sparsities(centered_img, pq_sparsity)
+sp_summary <- sparsities %>%
+  group_by(cardinality, region) %>%
+  summarize(sparsity = median(sparsity, na.rm = T), .groups = "drop") %>%
+  mutate(cardinality = factor(cardinality, levels = c("Positive", "Negative"))) %>%
+  order_regions() 
+
+p_dot <- sparsities %>%
+  order_regions() %>%
+  pivot_wider(names_from = cardinality, values_from = sparsity) %>%
+  label_arrays() %>%
+  ggplot(aes(x = Positive, y = Negative, color = array, shape = array)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+    labs(shape = "Array", color = "Array") + 
+    theme(
+      panel.spacing = unit(1, "lines"), 
+      panel.grid.minor = element_blank(), 
+      legend.position = "right")
+
+p_corr <- sparsities %>%
+  full_join(split_corrs, by = c("region", "site")) %>%
+  mutate(
+    corr_cutoff = case_when(
+      corr < 0.2 ~ "< 0.2", 
+      corr < 0.5 ~ "< 0.5", 
+      corr > 0.5 ~ "0.5+" )) %>%
+  pivot_wider(names_from = cardinality, values_from = sparsity) %>%
+  label_arrays() %>%
+  order_regions() %>%
+  ggplot(aes(x = Positive, y = Negative, color = corr_cutoff, shape = corr_cutoff)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(begin = 0.3, end = 0.8, option = "B")) +
+    labs(shape = "Split corr.", color = "Split corr.") + 
+    theme(
+      panel.spacing = unit(1, "lines"), 
+      panel.grid.minor = element_blank(), 
+      legend.position = "right")
+  
+p_dot + p_corr + plot_layout(ncol = 1) 
+```
+
+```{r}
+#| label: fig-split_hoyer
+#| fig-caption: "Hoyer sparsity calculated on positive/negative centered firings (not log ratio)."
+#| fig-width: 6
+#| fig-height: 3.5
+sparsities <- split_sparsities(centered_img, Lp_sparsity)
+sp_summary <- sparsities %>%
+  group_by(cardinality, region) %>%
+  summarize(sparsity = median(sparsity, na.rm = T), .groups = "drop") %>%
+  mutate(cardinality = factor(cardinality, levels = c("Positive", "Negative"))) %>%
+  order_regions() 
+
+p_dot <- sparsities %>%
+  order_regions() %>%
+  pivot_wider(names_from = cardinality, values_from = sparsity) %>%
+  label_arrays() %>%
+  ggplot(aes(x = Positive, y = Negative, color = array, shape = array)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+    labs(shape = "Array", color = "Array") + 
+    theme(
+      panel.spacing = unit(1, "lines"), 
+      panel.grid.minor = element_blank(), 
+      legend.position = "right")
+
+p_corr <- sparsities %>%
+  full_join(split_corrs, by = c("region", "site")) %>%
+  mutate(
+    corr_cutoff = case_when(
+      corr < 0.2 ~ "< 0.2", 
+      corr < 0.5 ~ "< 0.5", 
+      corr > 0.5 ~ "0.5+" )) %>%
+  pivot_wider(names_from = cardinality, values_from = sparsity) %>%
+  label_arrays() %>%
+  order_regions() %>%
+  ggplot(aes(x = Positive, y = Negative, color = corr_cutoff, shape = corr_cutoff)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(begin = 0.3, end = 0.8, option = "B")) +
+    labs(shape = "Split corr.", color = "Split corr.") + 
+    theme(
+      panel.spacing = unit(1, "lines"), 
+      panel.grid.minor = element_blank(), 
+      legend.position = "right")
+  
+p_dot + p_corr + plot_layout(ncol = 1) 
+```
+
+```{r}
+#| label: fig-lr_split_all
+#| fig-cap: "Same as previous figure but without correlation cutoff."
+#| fig-width: 5
+#| fig-height: 6
+dat <- here(out_dir, "log_ratio_img.qs2") %>% 
+  qs_read()
+lr_sparsity_split <- split_sparsities(dat, Lp_sparsity) %>%
+  order_regions() %>%
+  label_arrays()
+  
+p_split_1 <- lr_sparsity_split %>%
+  pivot_wider(names_from = cardinality, values_from = sparsity) %>%
+  ggplot(aes(x = Positive, y = Negative, color = array, shape = array)) + 
+    geom_point(alpha = 0.4) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+    labs(shape = NULL, color = NULL) + 
+    theme(
+      panel.grid.minor = element_blank())
+
+p_split_2 <- lr_sparsity_split %>%
+  full_join(split_corrs, by = c("region", "site")) %>%
+  order_regions() %>%
+  mutate(cardinality = factor(cardinality, levels = c("Magnitude", "Positive", "Negative"))) %>%
+  ggplot(aes(x = corr, y = sparsity, color = array, shape = array)) + 
+    geom_point(alpha = 0.4) +
+    facet_grid(cols = vars(region), rows = vars(cardinality), scales = "free_y") + 
+    scale_color_discrete(palette = scales::pal_viridis(end = 0.8, direction = -1)) +
+    labs(x = "Split half correlation", y = "Hoyer sparsity", shape = NULL, color = NULL) + 
+    theme(
+      panel.grid.minor = element_blank())
+
+p_split_1 + p_split_2 + plot_layout(ncol = 1, heights = c(1, 3))
+```
+
+### Monkey details
+
+```{r}
+library(tibble)
+monkey_ <- function(id, region, array, age) {
+  tibble::as_tibble_row(c(
+    id = id, 
+    region = region, 
+    array = array, 
+    age = age))
+}
+monkey_info <- list(
+  monkey_("M1", "V1", 1, 29), 
+  monkey_("M6", "V1", 2, 36), 
+  monkey_("M1", "V2", 1, 29), 
+  monkey_("M2", "V2", 2, 29), 
+  monkey_("M1", "V4", 1, 29),
+  monkey_("M2", "V4", 2, 29), 
+  monkey_("M8", "V4", 3, 409), 
+  monkey_("M3", "IT", 1, 20), 
+  monkey_("M6", "IT", 2, 34), 
+  monkey_("M7", "IT", 3, 20), 
+  monkey_("M6", "IT", 4, 221)) %>%
+  do.call(rbind, .) %>%
+  mutate(array = as.factor(array))
+```
+
+
+| Region | Array 1 | Array 2 | Array 3  | Array 4  |
+|:------:|---------|---------|----------|----------|
+| V1     | KY (29) | HT (36) |          |          |
+| V2     | KY (29) | LI (29) |          |          |
+| V4     | KY (29) | LI (29) | XT (409) |          |
+| IT     | BB (20) | HT (34) | HU (34)  | HT (221) |
+
+: File name codes
+
+| Region | Array 1 | Array 2 | Array 3  | Array 4  |
+|:------:|---------|---------|----------|----------|
+| V1     | M1 (29) | M6 (36) |          |          |
+| V2     | M1 (29) | M2 (29) |          |          |
+| V4     | M1 (29) | M2 (29) | M8 (409) |          |
+| IT     | M3 (20) | M6 (34) | M7 (34)  | M6 (221) |
+
+: Codes corresponding to Table 1 in Lee et al. 
+
+```{r, eval = F}
+library(cli)
+source(here("R", "str_info.R"))
+t2_dir <- here("data", "raw", "6reps") 
+files <- list.files(t2_dir)
+f_regions <- sapply(files, function(f) file_info(f)$region)
+
+matlab_info <- lapply(
+  cli_progress_along(files), 
+  function(i) {
+    dat <- file.path(t2_dir, files[i]) %>% 
+      R.matlab::readMat()
+    dat[c(
+      "file.names", 
+      "run.names", 
+      "incl.subj", 
+      "session.label")] })
+names(matlab_info) <- f_regions
+saveRDS(matlab_info, here(out_dir, "info_6rep.rds"))
+
+t2_dir <- here("data", "raw", "lee2024", "data", "textures2_data")
+files <- list.files(t2_dir)
+
+# matlab <- file.path(t2_dir, files[1]) %>% 
+#   R.matlab::readMat()
+
+age_info <- lapply(
+  cli_progress_along(files), 
+  function(i) {
+    f <- files[i]
+    f_info <- file_info(f)
+    
+    if (f_info$region == "FC") return(list()) 
+    
+    dat <- file.path(t2_dir, f) %>% 
+      R.matlab::readMat()
+    temp <- dat[c(
+      "file.names", 
+      "run.names", 
+      "incl.subj", 
+      "session.label")]
+    temp[["age"]] <- f_info$age
+    temp[["region"]] <- f_info$region
+    return(temp)
+})
+saveRDS(age_info, here(out_dir, "info_4rep.rds"))
+```
+
+```{r, eval = T}
+#| label: fig-monkey
+#| fig-width: 6
+#| fig-height: 4.5
+#| fig-cap: "Labeling by monkey rather than array."
+dat <- here(out_dir, "log_ratio_img.qs2") %>% 
+  qs_read()
+lr_sparsity_split <- split_sparsities(dat, Lp_sparsity) %>%
+  order_regions() %>%
+  label_arrays() %>%
+  full_join(split_corrs, by = c("region", "site")) %>%
+  full_join(monkey_info, by = c("region", "array")) %>%
+  mutate(spbrown = 2 * corr / (1 + corr))
+
+p1 <- lr_sparsity_split %>% 
+  filter(spbrown > 0.2, cardinality == "Magnitude") %>%
+  order_regions() %>%
+  ggplot(aes(x = corr, y = sparsity, color = id, shape = id)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(
+      palette = scales::pal_viridis(begin = 0.1, end = 0.9, direction = -1, option = "C")) + 
+    theme(
+      axis.title.x = element_text(margin = unit(c(4, 0, 0, 0), "mm")),
+      axis.title.y = element_text(margin = unit(c(0, 4, 0, 0), "mm")),
+      legend.position = "right",
+      axis.text.x = element_blank(), 
+      panel.grid.minor = element_blank()) +
+    labs(
+      # x = "Site reliability (Spearman-Brown corrected Pearson's r)", 
+      x = NULL, 
+      y = "Hoyer sparsity", 
+      shape = "Monkey", 
+      color = "Monkey")
+
+p2 <- lr_sparsity_split %>% 
+  filter(spbrown > 0.2, cardinality == "Magnitude") %>%
+  mutate(age = factor(age, levels = c("20", "29", "34", "36", "221", "409"))) %>%
+  order_regions() %>%
+  ggplot(aes(x = corr, y = sparsity, color = age, shape = age)) + 
+    geom_point(alpha = 0.6) +
+    facet_wrap(vars(region), nrow = 1) + 
+    scale_color_discrete(
+      palette = scales::pal_viridis(begin = 0.3, end = 0.95, direction = -1, option = "G")) + 
+    theme(
+      strip.text.x = element_blank(), 
+      axis.title.x = element_text(margin = unit(c(4, 0, 0, 0), "mm")),
+      axis.title.y = element_text(margin = unit(c(0, 4, 0, 0), "mm")),
+      legend.position = "right",
+      panel.grid.minor = element_blank()) +
+    labs(
+      x = "Site reliability (Spearman-Brown corrected Pearson's r)", 
+      y = "Hoyer sparsity", 
+      shape = "Age (wks)", 
+      color = "Age (wks)") 
+
+p1 + p2 + plot_layout(nrow = 2)
+# ggsave(here(res_dir, "lr_hoyer_monkey_info.png"), width = 6, height = 4.5, dpi = 600)
+```
+
+### Sanity check of M2 over ages
+
+- KY_n2: different ages (4 repetition)
+  - 34 vs. 56 week
+- Low reliability cannot yield low sparsity
