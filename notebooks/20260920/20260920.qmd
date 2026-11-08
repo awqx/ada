@@ -60,6 +60,10 @@ Multi-unit activations from IT recordings were averaged over different windows w
 
 ### Split-half correlations
 
+::: {.callout-note}
+**Archived implementation.** The IT sliding-window split-half correlations were computed by `scripts/split_corrs_rgn_onset_l.R` and `scripts/split_corrs_it_sliding.sh` (with `R/split_half_corr.R`), all since removed. Known issues with that implementation: it used all 20 ordered combinations of `combn(6, 3)` (each 3-vs-3 partition counted twice), averaged correlations directly rather than in Fisher z-space, did not apply the Spearman-Brown correction, and handled blanks inconsistently across settings (one aggregated blank group for the median onset/150 ms values, blanks excluded elsewhere). The current script covers other onsets/windows by editing `config/split_corrs.yml`. They were replaced by `scripts/split_corrs.R` and `R/reliability.R`; corrected values for all regions, onsets, windows, and blank handling are in `data/processed/20261104/split_corrs.csv` (see notebooks/20261104). To inspect the exact code used here, run `git show a3c5039:<path>`, e.g., `git show a3c5039:scripts/split_corrs.R`.
+:::
+
 In general, split-half correlations tend to be higher with later onsets and longer windows (@fig-corr_dist). 
 
 ```{r}

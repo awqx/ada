@@ -167,6 +167,10 @@ The effect of onset time calculation (e.g., modifying it to be calculated only o
 
 ## Pre-computing splits
 
+::: {.callout-note}
+**Archived implementation.** The splits and split-half correlations in this notebook were computed by `scripts/rep_splits.R` (pre-averaged splits) and `scripts/split_corrs.R` (correlations), both since removed. Known issues with that implementation: it used all 20 ordered combinations of `combn(6, 3)` (each 3-vs-3 partition counted twice), averaged correlations directly rather than in Fisher z-space, did not apply the Spearman-Brown correction, and handled blanks inconsistently across settings (one aggregated blank group for the median onset/150 ms values, blanks excluded elsewhere). They were replaced by `scripts/split_corrs.R` and `R/reliability.R`; corrected values for all regions, onsets, windows, and blank handling are in `data/processed/20261104/split_corrs.csv` (see notebooks/20261104). To inspect the exact code used here, run `git show a3c5039:<path>`, e.g., `git show a3c5039:scripts/split_corrs.R`.
+:::
+
 There are 20 possible ways to split the 6 repetitions into two groups. For some analyses, I found it a bit easier to front-load computations and memory usage and pre-calculate the averages (taken over sample images) per each of the 20 possible splits. 
 
 (This is actually probably not that useful but will be kept in `/scratch` in the `levi2.stat.cmu.edu` server). 
