@@ -1,0 +1,27 @@
+# Canonical data sources, read with the Posit `config` package.
+#
+# Scripts and notebooks ask for data by name (e.g., data_path("stimuli")) so
+# that switching to a new canonical version means editing one line here.
+# `{name}` placeholders are filled by arguments to data_path(). Relative paths
+# are relative to the project root; absolute paths are used as is.
+#
+# The `default` section applies everywhere. Other sections override it on a
+# given machine, selected with the R_CONFIG_ACTIVE environment variable
+# (e.g., `export R_CONFIG_ACTIVE=server` in the server's ~/.bashrc). Keys a
+# section does not list are inherited from `default`.
+
+default:
+  # raw MUA, trials x 10 ms bins x sites, one file per region
+  mua: data/processed/20260625/{region}.qs2
+
+  # trial labels (coherence, family, id, repetition) matching the rows of
+  # `mua`; blanks have id 1-100 (position within the blank block) and
+  # repetition 1-6
+  stimuli: data/processed/20260826/stimuli.csv
+
+  # per-site onset times (bins after stimulus presentation), list by region
+  onsets: data/processed/20260826/onsets_all.RDS
+
+# Example: on the server, read the large MUA files from scratch.
+# server:
+#   mua: /scratch/axin/ada/data/processed/20260625/{region}.qs2

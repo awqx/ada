@@ -1,0 +1,13 @@
+# Store text files with LF line endings in the repository, regardless of which
+# OS (Windows R/RStudio, WSL, the server) wrote them.
+* text=auto eol=lf
+
+# Never treat these as text
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.qs2 binary
+*.RDS binary
+*.rds binary
+*.mat binary

@@ -1,0 +1,100 @@
+---
+title: "Repeated resampling for Mahalanobis distance calculation"
+date: last-modified
+author: Al Xin
+date-format: MMM D, YYYY
+bibliography: ../../reports/refs.bib
+csl: ../../reports/nlm.csl
+format:
+  pdf:
+    toc: false
+    number-sections: true
+    fontsize: 10pt
+    colorlinks: true
+    indent: true
+    keep-tex: true
+    fig-dpi: 600
+    include-in-header:
+      text: |
+        \usepackage{xcolor, soul}
+        \definecolor{Light}{gray}{.90}
+        \sethlcolor{Light}
+        \let\OldTexttt\texttt
+        \renewcommand{\texttt}[1]{\OldTexttt{\hl{#1}}}
+        \usepackage{caption}
+        \captionsetup{font=small, labelfont=bf}
+        \setlength{\parindent}{0pt}
+        \setlength{\parskip}{1.25ex}
+        \input{../../reports/statscmds.tex}
+---
+
+```{r setup, message = FALSE, warning = FALSE, echo = FALSE}
+nb_id <- "20261106"
+here::i_am(paste0("notebooks/", nb_id, "/", nb_id, ".qmd"))
+
+library(dplyr)
+library(tidyr)
+library(here)
+library(qs2)
+library(ggplot2)
+knitr::opts_chunk$set(echo = F, warning = F, message = T)
+
+out_dir <- here("data", "processed", nb_id)
+res_dir <- here("results", nb_id)
+
+if (!dir.exists(out_dir)) dir.create(out_dir)
+if (!dir.exists(res_dir)) dir.create(res_dir)
+
+theme_set(theme_minimal(base_size = 9))
+```
+
+```{r}
+stimuli <- read.csv(here("data", "processed", "20260625", "stimuli.csv"))
+regions <- c("V1", "V2", "V4", "IT")
+```
+
+## Distance
+
+```{r}
+source(here("R", "dM_fast.R"))
+```
+
+```{r}
+set.seed(20261104)
+regions <- c("V1", "V2", "V4", "IT")
+data_dir <- here("data", "processed", "20260625")
+avgs <- qs_read(here(data_dir, "avgs.qs2"))
+stimuli <- read.csv(here(data_dir, "stimuli.csv"))
+
+# limit to naturalistic stimuli
+natur_idx <- stimuli$coherence == 2
+avgs <- lapply(regions,
+  function(x) avgs[[x]][natur_idx, ])
+names(avgs) <- regions
+stimuli <- stimuli[natur_idx, ]
+fam_grps <- stimuli$family
+
+dM_pfs <- lapply(
+  regions, 
+  function(rgn) {
+    matched_sites <- read.csv(here("results", "20260826", "split_corrs.csv")) %>%
+      filter(grp_type == "img", n_blanks == 1, region == rgn) %>%
+      filter(corr > 0.3, corr < 0.6)
+    sites <- sample(matched_sites$site, 30)
+    dat <- avgs[[rgn]][, sites]
+    dM_pairwise(dat, fam_grps, shrink = F, format = "vector", progress = F)
+})
+```
+
+## Simulations
+
+- Subsampling sites in order of reliability, plotting the Mahalanobis distance
+  - Sliding window (omits lower reliability?)
+  - Repeat this for both fixed reliability and fixed number (latter: subsample if needed?  )
+- Subsampling random sites of fixed number, recording reliability and sparsity
+
+
+## References
+
+::: {#refs}
+:::

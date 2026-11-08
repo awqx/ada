@@ -1,0 +1,31 @@
+# Settings grid for scripts/split_corrs.R
+#
+# Every combination of region x onset x window x blanks is computed. To add a
+# setting, add it here rather than copying the script. Read with the Posit
+# `config` package; add a section other than `default` (selected with
+# R_CONFIG_ACTIVE) to override settings on a given machine.
+
+default:
+  regions: [V1, V2, V4, IT]
+
+  # bin of stimulus presentation
+  stim_idx: 50
+
+  # averaging windows, in 10 ms bins
+  windows: [10, 15]
+
+  # onset schemes, in bins after stimulus presentation. A per-region list gives
+  # fixed onsets; "median" uses the floored median of the per-site onsets in
+  # data_path("onsets").
+  onsets:
+    earlier: {V1: 3, V2: 4, V4: 5, IT: 6}
+    median: median
+
+  # blank handling
+  #   none:       blanks excluded
+  #   aggregated: all blanks share one label (one image)
+  #   separated:  each blank id is its own image (100 images)
+  blanks: [none, aggregated, separated]
+
+  # default output, relative to the project root
+  out: data/processed/20261104/split_corrs.csv
