@@ -88,10 +88,11 @@ dM_pfs <- lapply(
 
 ## Simulations
 
+- Filter based on reliability >= 0.1
 - Subsampling sites in order of reliability, plotting the Mahalanobis distance
-  - Sliding window (omits lower reliability?)
-  - Repeat this for both fixed reliability and fixed number (latter: subsample if needed?  )
-- Subsampling random sites of fixed number, recording reliability and sparsity
+  - first pass: after filtering above, do dM calculated in four quartiles of reliability
+  - later, for interpolation: sliding window?
+-
 
 
 ## References

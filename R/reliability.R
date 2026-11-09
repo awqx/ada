@@ -160,3 +160,157 @@ split_half_corr <- function(
     return(res)
   }
 }
+
+#' Nested random-effects ANOVA of stimulus responses
+#'
+#' Variance components for a balanced design with images nested in families
+#' and repetitions crossed with both, fit for all sites at once from the
+#' expected mean squares:
+#'
+#' y = mu + family + image(family) + rep + family:rep + error
+#'
+#' | source          | df              | E[MS]                               |
+#' |-----------------|-----------------|-------------------------------------|
+#' | family          | a - 1           | s2_e + b s2_fr + n s2_i + b n s2_f  |
+#' | image(family)   | a (b - 1)       | s2_e + n s2_i                       |
+#' | rep             | n - 1           | s2_e + b s2_fr + a b s2_r           |
+#' | family:rep      | (a - 1)(n - 1)  | s2_e + b s2_fr                      |
+#' | error           | a (b - 1)(n - 1)| s2_e                                |
+#'
+#' with a families, b images per family, and n repetitions (one trial per
+#' image and repetition). Repetition terms absorb block-level drift, matching
+#' the split-half setup in which halves are formed from repetition blocks.
+#' Method-of-moments estimates are not truncated, so they can be negative.
+#'
+#' The simpler nested model without repetition terms,
+#' y = mu + family + image(family) + error, is returned alongside (suffix
+#' `_simple`). Its family and image mean squares are identical (balanced
+#' design); its residual pools the rep, family:rep, and error sums of
+#' squares, MS_E' = (SS_R + SS_FR + SS_E) / (a b (n - 1)). If repetition
+#' effects exist, E[s2_f_simple] = s2_f + s2_fr / n and
+#' E[s2_i_simple] = s2_i - (s2_r + s2_fr) / n.
+#'
+#' The intermediate model with a repetition main effect but no family:rep
+#' term, y = mu + family + image(family) + rep + error, is also returned
+#' (suffix `_rep`). Its residual pools the family:rep and error sums of
+#' squares, MS_E'' = (SS_FR + SS_E) / ((a - 1)(n - 1) + a (b - 1)(n - 1)). Its
+#' family component equals the simple model's; block offsets (s2_r) no longer
+#' bias the image component, and only family:rep effects (s2_fr) would.
+#'
+#' @param dat numeric matrix of trials x sites (e.g., from `window_mean()`), or
+#' a vector of trials for a single site
+#' @param family vector of family labels for the rows of `dat`; trials
+#' labeled `NA` are excluded
+#' @param image vector of image labels, unique within each family
+#' @param rep vector of repetition labels
+#'
+#' @returns data frame with one row per site: variance components of the full
+#' model (`s2_f`, `s2_i`, `s2_fr`, `s2_e`, `s2_r`), the family share of
+#' stimulus variance `rho = s2_f / (s2_f + s2_i)`, the mean squares (`ms_f`,
+#' `ms_i`, `ms_r`, `ms_fr`, `ms_e`), and the simple model's components
+#' (`s2_f_simple`, `s2_i_simple`, `s2_e_simple`, `rho_simple`) and the
+#' repetition-main-effect model's (`s2_f_rep`, `s2_i_rep`, `s2_e_rep`,
+#' `rho_rep`)
+
+nested_anova <- function(dat, family, image, rep) {
+  dat <- as.matrix(dat)
+  keep <- !is.na(family)
+  dat <- dat[keep, , drop = F]
+  f <- as.integer(factor(family[keep]))
+  fi <- as.integer(factor(paste(family[keep], image[keep], sep = "\r")))
+  r <- as.integer(factor(rep[keep]))
+  fr <- as.integer(factor(paste(f, r, sep = "\r")))
+
+  a <- max(f)
+  n <- max(r)
+  b <- max(fi) / a
+  if (b != round(b) || any(tabulate(fi) != n) || any(tabulate(fr) != b) ||
+      nrow(dat) != a * b * n)
+    stop("Design must be balanced: every image once per repetition, and the ",
+         "same number of images in every family.")
+
+  # cell means; rowsum() orders groups by integer code, so index by code
+  grand <- colMeans(dat)
+  m_f <- rowsum(dat, f, reorder = T) / (b * n)
+  m_fi <- rowsum(dat, fi, reorder = T) / n
+  m_r <- rowsum(dat, r, reorder = T) / (a * b)
+  m_fr <- rowsum(dat, fr, reorder = T) / b
+  f_of_fi <- f[match(seq_len(a * b), fi)]
+  f_of_fr <- f[match(seq_len(a * n), fr)]
+  r_of_fr <- r[match(seq_len(a * n), fr)]
+
+  centered <- function(x, y) sweep(x, 2, y)
+  ss_f <- b * n * colSums(centered(m_f, grand)^2)
+  ss_i <- n * colSums((m_fi - m_f[f_of_fi, , drop = F])^2)
+  ss_fr <- b * colSums(centered(
+    m_fr - m_f[f_of_fr, , drop = F] - m_r[r_of_fr, , drop = F], -grand)^2)
+  ss_e <- colSums((dat - m_fi[fi, , drop = F] - m_fr[fr, , drop = F] +
+    m_f[f, , drop = F])^2)
+
+  ms_f <- ss_f / (a - 1)
+  ms_i <- ss_i / (a * (b - 1))
+  ms_fr <- ss_fr / ((a - 1) * (n - 1))
+  ms_e <- ss_e / (a * (b - 1) * (n - 1))
+
+  s2_f <- (ms_f - ms_i - ms_fr + ms_e) / (b * n)
+  s2_i <- (ms_i - ms_e) / n
+  # repetition main effect (only needed for s2_r and the simple model)
+  ss_r <- a * b * colSums(centered(m_r, grand)^2)
+  ms_r <- ss_r / (n - 1)
+
+  # simple model: rep, family:rep, and error pooled into the residual
+  ms_e_simple <- (ss_r + ss_fr + ss_e) / (a * b * (n - 1))
+  s2_f_simple <- (ms_f - ms_i) / (b * n)
+  s2_i_simple <- (ms_i - ms_e_simple) / n
+
+  # intermediate model: rep main effect kept, family:rep pooled with error
+  ms_e_rep <- (ss_fr + ss_e) / ((a - 1) * (n - 1) + a * (b - 1) * (n - 1))
+  s2_i_rep <- (ms_i - ms_e_rep) / n
+
+  data.frame(
+    s2_f = s2_f,
+    s2_i = s2_i,
+    s2_fr = (ms_fr - ms_e) / b,
+    s2_e = ms_e,
+    rho = s2_f / (s2_f + s2_i),
+    s2_r = (ms_r - ms_fr) / (a * b),
+    ms_f = ms_f,
+    ms_i = ms_i,
+    ms_r = ms_r,
+    ms_fr = ms_fr,
+    ms_e = ms_e,
+    s2_f_simple = s2_f_simple,
+    s2_i_simple = s2_i_simple,
+    s2_e_simple = ms_e_simple,
+    rho_simple = s2_f_simple / (s2_f_simple + s2_i_simple),
+    s2_f_rep = s2_f_simple,
+    s2_i_rep = s2_i_rep,
+    s2_e_rep = ms_e_rep,
+    rho_rep = s2_f_simple / (s2_f_simple + s2_i_rep))
+}
+
+#' Split-half correlation of one site's stimulus x repetition matrix
+#'
+#' Same estimator as `split_half_corr()` (Fisher z average over balanced
+#' splits, optional Spearman-Brown correction), for data already arranged as
+#' stimuli x repetitions. Faster when called many times, e.g., in simulations.
+#'
+#' @param Y numeric matrix of stimuli x repetitions
+#' @param splits optional list of splits, as returned by `balanced_splits()`
+#' @param reliability whether to apply the Spearman-Brown correction, defaults
+#' to `reliability = F`
+#' @param ... optional arguments passed to `spearman_brown()`
+#'
+#' @returns split-half correlation (or reliability)
+
+split_half_reps <- function(Y, splits = NULL, reliability = F, ...) {
+  if (is.null(splits)) splits <- balanced_splits(ncol(Y))
+  z <- vapply(
+    seq_len(ncol(splits[[1]])),
+    function(k) atanh(cor(
+      rowMeans(Y[, splits[[1]][, k], drop = F]),
+      rowMeans(Y[, splits[[2]][, k], drop = F]))),
+    numeric(1))
+  res <- tanh(mean(z))
+  if (reliability) spearman_brown(res, ...) else res
+}

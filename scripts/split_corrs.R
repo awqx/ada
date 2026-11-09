@@ -1,7 +1,8 @@
 ## Per-site split-half correlations and Spearman-Brown reliabilities
 ##
-## Computes every combination of region x onset x window x blank handling in
-## a settings file (default config/split_corrs.yml) and writes one long table,
+## Computes every combination of region x onset x window x stimulus set
+## (all/noisy/naturalistic) x averaging (image/family) x blank handling in a
+## settings file (default config/split_corrs.yml) and writes one long table,
 ## plus a provenance record (<out>.json). Method: R/reliability.R. Background:
 ## notebooks/20261104.
 ##
@@ -63,24 +64,57 @@ grid <- expand.grid(
   onset_type = names(cfg$onsets),
   stringsAsFactors = F)
 
-# stimulus labels per trial for each blank scheme (NA = excluded). Trials are
-# presorted into one block per repetition, so labels alone determine the
-# repetitions (see rep_index()).
+# Stimulus labels per trial (NA = excluded) for each combination of stimulus
+# set, averaging, and blank handling. Trials are presorted into one block per
+# repetition, so labels and n_reps determine the repetitions (see
+# rep_index()); n_reps is given explicitly because family labels appear
+# several times per repetition.
 stimuli <- read.csv(data_path("stimuli"))
+n_reps <- max(stimuli$repetition)
 blank <- stimuli$coherence == 0
-img <- paste(stimuli$coherence, stimuli$family, stimuli$id)
-labels <- list(
-  none = ifelse(blank, NA, img),
-  aggregated = ifelse(blank, "blank", img),
-  separated = img)[unlist(cfg$blanks)]
 
-splits <- balanced_splits(max(stimuli$repetition))
+stim_label <- function(stim_set, average, blanks) {
+  keep <- switch(
+    stim_set,
+    all = stimuli$coherence > 0,
+    noisy = stimuli$coherence == 1,
+    naturalistic = stimuli$coherence == 2)
+  lab <- switch(
+    average,
+    image = paste(stimuli$coherence, stimuli$family, stimuli$id),
+    family = paste(stimuli$coherence, "family", stimuli$family))
+  lab[!keep] <- NA
+  lab[blank] <- switch(
+    blanks,
+    none = NA,
+    aggregated = "blank",
+    separated = paste("blank", stimuli$id[blank]))
+  lab
+}
+
+schemes <- do.call(rbind, lapply(names(cfg$averages), function(average)
+  expand.grid(
+    stimuli = unlist(cfg$stimuli),
+    average = average,
+    blanks = unlist(cfg$averages[[average]]),
+    stringsAsFactors = F)))
+labels <- lapply(seq_len(nrow(schemes)), function(j)
+  stim_label(schemes$stimuli[j], schemes$average[j], schemes$blanks[j]))
+
+# check: label order reproduces the recorded repetitions in every scheme
+for (lab in labels) {
+  keep <- !is.na(lab)
+  stopifnot(identical(rep_index(lab[keep], n_reps), stimuli$repetition[keep]))
+}
+
+splits <- balanced_splits(n_reps)
 
 message(
   "Regions: ", paste(regions, collapse = ", "), "\n",
   "Onsets: ", paste(names(cfg$onsets), collapse = ", "),
-  " | windows: ", paste(cfg$windows, collapse = ", "), " bins",
-  " | blanks: ", paste(names(labels), collapse = ", "), "\n",
+  " | windows: ", paste(cfg$windows, collapse = ", "), " bins\n",
+  "Schemes (stimuli / average / blanks): ",
+  paste(apply(schemes, 1, paste, collapse = "/"), collapse = ", "), "\n",
   "Output: ", out)
 if (isTRUE(opts$dry_run)) quit(save = "no")
 
@@ -97,15 +131,17 @@ for (region in regions) {
     onset <- onset_bins(grid$onset_type[i], region)
     win_mean <- window_mean(mua, onset, grid$window[i], cfg$stim_idx)
 
-    for (blanks in names(labels)) {
-      corr <- split_half_corr(win_mean, labels[[blanks]], splits)
+    for (j in seq_len(nrow(schemes))) {
+      corr <- split_half_corr(win_mean, labels[[j]], splits, n_reps = n_reps)
       res[[length(res) + 1]] <- data.frame(
         region = region,
         site = seq_along(corr),
         onset_type = grid$onset_type[i],
         onset = onset,
         ms = 10 * grid$window[i],
-        blanks = blanks,
+        stimuli = schemes$stimuli[j],
+        average = schemes$average[j],
+        blanks = schemes$blanks[j],
         corr = corr,
         reliability = spearman_brown(corr))
     }

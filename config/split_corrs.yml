@@ -1,7 +1,8 @@
 # Settings grid for scripts/split_corrs.R
 #
-# Every combination of region x onset x window x blanks is computed. To add a
-# setting, add it here rather than copying the script. Read with the Posit
+# Every combination of region x onset x window x stimuli x average x blanks is
+# computed. To add a setting, add it here rather than copying the script.
+# Read with the Posit
 # `config` package; add a section other than `default` (selected with
 # R_CONFIG_ACTIVE) to override settings on a given machine.
 
@@ -21,11 +22,25 @@ default:
     earlier: {V1: 3, V2: 4, V4: 5, IT: 6}
     median: median
 
+  # non-blank stimuli included
+  #   all:          noisy (coherence 1) and naturalistic (coherence 2)
+  #   noisy:        coherence 1 only
+  #   naturalistic: coherence 2 only
+  stimuli: [all, noisy, naturalistic]
+
+  # what trials are averaged over before correlating halves, and the blank
+  # handling allowed for each
+  #   image:  each sample image (coherence, family, id)
+  #   family: each texture family within a coherence (under `all`, 35
+  #           families x 2 coherences = 70 groups, 71 with aggregated blanks)
   # blank handling
   #   none:       blanks excluded
-  #   aggregated: all blanks share one label (one image)
-  #   separated:  each blank id is its own image (100 images)
-  blanks: [none, aggregated, separated]
+  #   aggregated: all blanks share one label (one image / one family)
+  #   separated:  each blank id is its own image (100 images); image only,
+  #               since blanks have no family structure
+  averages:
+    image: [none, aggregated, separated]
+    family: [none, aggregated]
 
   # default output, relative to the project root
   out: data/processed/20261104/split_corrs.csv

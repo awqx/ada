@@ -41,7 +41,6 @@ knitr::opts_chunk$set(echo = F, warning = F, message = T)
 
 out_dir <- here("data", "processed", nb_id)
 res_dir <- here("results", nb_id)
-source("R/config.R")
 
 if (!dir.exists(out_dir)) dir.create(out_dir)
 if (!dir.exists(res_dir)) dir.create(res_dir)
@@ -58,6 +57,12 @@ regions <- c("V1", "V2", "V4", "IT")
 
 ```{r}
 source(here("R", "reliability.R"))
+source(here("R", "label_arrays.R"))
+split_corrs <- here(out_dir, "split_corrs.csv") %>%
+  read.csv()  %>%
+  as_tibble() %>%
+  label_arrays() %>%
+  order_regions() 
 ```
 
 Split-half correlations are computed with `split_half_corr()` (see `R/reliability.R`. 
@@ -78,94 +83,427 @@ Similar to `20260917`, reliabilities were found for
 ## Correlation
 
 ```{r}
-#| label: fig-split_corrs_vs
-#| fig-cap: "Scatter plots comparing the per-site split-half correlations when onset times are earlier with 100 ms window vs. median with 150 ms window."
-#| fig-height: 4
-#| fig-width: 4.5
-regions <- c("V1", "V2", "V4", "IT")
-split_corrs <- here(out_dir, "split_corrs.csv") %>%
-  read.csv() 
-
-# earlier 100 ms vs. median 150 ms (original)
-split_corrs %>%
-  filter((onset_type == "earlier" & ms == 100) | (onset_type == "median" & ms == 150)) %>%
-  select(-ms) %>%
-  pivot_wider(names_from = onset_type, values_from = corr) %>%
-  mutate(region = factor(region, levels = regions)) %>%
-  ggplot(aes(x = median, y = earlier, color = region)) + 
-    geom_point() + 
-    facet_wrap(vars(region), ncol = 2) +
-    labs(x = "Pearson's ρ (median onset, 150 ms)", 
-         y = "Pearson's ρ (early onset, 100 ms)") + 
-    theme(legend.position = "none")
-```
-
-```{r}
-#| label: fig-split_corrs_vs_hist
-#| fig-cap: "Histograms comparing the per-site split-half correlations when onset times are earlier with 100 ms window vs. median with 150 ms window."
+#| label: fig-region_array
+#| fig-cap: ""
 #| fig-height: 3
-#| fig-width: 5
+#| fig-width: 4.5
+
 library(patchwork)
+dat <- split_corrs %>%
+  filter(
+    onset_type == "median", 
+    ms == 150, 
+    blanks == "aggregated",
+    stimuli == "naturalistic", 
+    average == "image")
+
 # earlier 100 ms vs. median 150 ms (original)
-split_corrs %>%
-  filter((onset_type == "earlier" & ms == 100) | (onset_type == "median" & ms == 150)) %>%
-  select(-ms) %>%
-  mutate(region = factor(region, levels = regions)) %>%
-  mutate(onset_type = replace_when(onset_type, 
-    onset_type == "earlier" ~ "Earlier", onset_type == "median" ~ "Median")) %>%
-  ggplot(aes(x = corr, y = ..ncount.., fill = region)) + 
-    geom_histogram(bins = 12) + 
-    facet_grid(cols = vars(region), rows = vars(onset_type)) +
-    labs(x = "Pearson's ρ", 
-         y = NULL) + 
+p_1 <- dat %>%
+  mutate(array = "All") %>%
+  ggplot(aes(x = reliability, y = ..ncount.., fill = region)) + 
+    geom_histogram(bins = 20) + 
+    facet_grid(rows = vars(region), cols = vars(array)) +
+    labs(x = "Reliability", y = NULL) + 
+    scale_x_continuous(breaks = 0:5 * 0.2) + 
     theme(
-      legend.position = "none", 
-      scale_x_continuous(breaks = 0:5 * 0.2),
+      panel.grid.minor.x = element_blank(),
+      panel.grid.minor.y = element_blank(),
+      panel.grid.major.y = element_blank(),
+      strip.text.y = element_blank(), 
       axis.text.y = element_blank(), 
-      panel.grid = element_blank())
+      legend.position = "none")
+p_2 <- dat %>%
+  ggplot(aes(x = reliability, y = ..ncount.., fill = region)) + 
+    geom_histogram(aes(grouping = array), alpha = 0.4, bins = 15, position = "identity") + 
+    facet_grid(rows = vars(region), cols = vars(array)) +
+    labs(x = NULL, y = NULL) + 
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(), 
+      legend.position = "none")
+p_1 + p_2 + plot_layout(widths = c(1, 2.5))
 ```
 
 ```{r, eval = F}
-#| fig-height: 4
-#| fig-width: 4.5
-# earlier 150 ms vs. median 150 ms (original)
-split_corrs %>%
-  filter(ms == 150) %>%
-  pivot_wider(names_from = onset_type, values_from = corr) %>%
-  mutate(region = factor(region, levels = regions)) %>%
-  ggplot(aes(x = median, y = earlier, color = region)) + 
-    geom_point() + 
-    facet_wrap(vars(region), ncol = 2) +
-    labs(x = "Pearson's ρ (median onset, 150 ms)", 
-         y = "Pearson's ρ (early onset, 150 ms)") + 
-    theme(legend.position = "none")
+p_1 + p_2 + plot_layout(widths = c(1, 2.5))
+ggsave(here(res_dir, "region_array_reliability.png"), height = 3, width = 4.5, dpi = 600)
 ```
-
-### Comparison of shorter and longer windows
 
 ```{r}
-#| label: fig-l_windows_vs
-#| fig-cap: "Comparison of split-half correlations for windows of 100 ms and windows of 150 ms. In general, split-half correlations are larger for 150 ms windows, with the difference most prominent in earlier onset times."
-regions <- c("V1", "V2", "V4", "IT")
-split_corrs <- here(out_dir, "split_corrs.csv") %>%
-  read.csv() 
+#| label: fig-img_family_avg
+#| fig-cap: ""
+#| fig-height: 3
+#| fig-width: 5
 
-# earlier 150 ms vs. earlier 100 ms
-split_corrs %>%
-  pivot_wider(names_from = ms, values_from = corr, names_prefix = "ms_") %>%
-  mutate(region = factor(region, levels = regions)) %>%
-  mutate(onset_type = replace_when(onset_type, 
-    onset_type == "earlier" ~ "Early onset", 
-    onset_type == "median" ~ "Median onset")) %>% 
-  ggplot(aes(x = ms_150, y = ms_100, color = region)) +
-    geom_point() +
-    geom_abline(slope = 1, intercept = 0) +  
-    facet_grid(rows = vars(onset_type), cols = vars(region)) + 
+library(patchwork)
+dat <- split_corrs %>%
+  filter(
+    onset_type == "median", 
+    ms == 150, 
+    blanks == "none",
+    stimuli == "naturalistic") %>%
+  select(region, array, site, average, reliability) %>%
+  pivot_wider(names_from = "average", values_from = "reliability")
+
+dat %>%
+  mutate(snr_img = image / (1 - image), snr_fam = family / (1 - family)) %>%
+  filter(image > 0.2) %>%
+  # filter(image > 0) %>%
+  ggplot(aes(log10(snr_img), log10(snr_fam), color = array, shape = array)) +
+    geom_point(alpha = 0.4) + 
+    geom_abline(intercept = log10(15), slope = 1, linetype = "dashed") + 
+    # scale_x_log10() + 
+    # scale_y_log10() +
+    facet_wrap(vars(region), nrow = 1) +
     labs(
-      x = "Pearson's r (150 ms)", 
-      y = "Pearson's r (100 ms)") + 
-    theme(legend.position = "none")
+      x = "Sample-wise reliability", 
+      y = "Family-wise reliability", 
+      shape = "Array", color = "Array") + 
+    scale_color_discrete(
+      palette = scales::pal_viridis(end = 0.8, direction = -1, option = "D")) + 
+  theme(
+    panel.grid.minor = element_blank(), 
+    legend.position = "bottom") 
 ```
+
+
+### Family share of stimulus variance
+
+The relationship in @fig-img_family_avg follows from averaging: a family mean pools $m = 15$ images, so if images within a family responded identically, the family-wise signal-to-noise ratio would be 15 times the sample-wise one (dashed line). Sites fall below the line to the extent that their reliable variance is image-specific rather than family-level. This can be estimated directly per site with a nested random-effects ANOVA (`nested_anova()` in `R/reliability.R`),
+$$
+y_{fir} = \mu + a_f + b_{i(f)} + c_r + (ac)_{fr} + e_{fir},
+$$
+with families $f$ (35), images $i$ nested in families (15), and repetitions $r$ (6) crossed with both. Repetition terms absorb block-level drift, matching the split-half setup (halves are formed from repetition blocks). The design is balanced, so the variance components follow from the expected mean squares. The quantity of interest is
+$$
+\rho_{\textrm{fam}} = \frac{\sigma^2_f}{\sigma^2_f + \sigma^2_i},
+$$
+the share of stimulus-driven variance at the family level: 1 for purely family-level tuning, 0 for purely image-specific tuning. Trial noise $\sigma^2_e$ does not enter $\rho_{\textrm{fam}}$, so its expected value does not depend on a site's reliability, which makes between-region comparisons meaningful. Its precision does depend on reliability, so the summary uses only sites with sample-wise reliability $\geq 0.2$ (same threshold for every region). Because sites on an array are not independent, results are shown per array, with 95% intervals from bootstrapping families (200 resamples; this captures uncertainty from the finite set of 35 families). Blanks are excluded throughout. Responses are averaged over the median-onset, 150 ms window.
+
+```{r, eval = F}
+#| label: nested_anova_compute
+library(SimDesign)
+source(here("R", "config.R"))
+stim <- read.csv(data_path("stimuli"))
+onsets_all <- readRDS(data_path("onsets"))
+l_window <- 15
+n_boot <- 200
+coherence <- c(noisy = 1, naturalistic = 2)
+
+# window means (trials x sites) per region, median onset
+win <- lapply(regions, function(rgn) {
+  mua <- qs_read(data_path("mua", region = rgn))
+  onset <- floor(median(onsets_all[[rgn]], na.rm = T))
+  window_mean(mua, onset, l_window)
+})
+names(win) <- regions
+
+# trials, family, image, and repetition labels for a condition
+condition_data <- function(condition, fixed_objects) {
+  rows <- which(fixed_objects$stim$coherence == coherence[[condition$stimuli]])
+  list(
+    dat = fixed_objects$win[[condition$region]][rows, ],
+    family = fixed_objects$stim$family[rows],
+    image = fixed_objects$stim$id[rows],
+    rep = fixed_objects$stim$repetition[rows])
+}
+
+# point estimates on the full data
+Design <- createDesign(region = regions, stimuli = names(coherence))
+fixed <- list(win = win, stim = stim)
+anova_est <- lapply(seq_len(nrow(Design)), function(j) {
+  d <- condition_data(Design[j, ], fixed)
+  est <- nested_anova(d$dat, d$family, d$image, d$rep)
+  data.frame(Design[j, ], site = seq_len(nrow(est)), est)
+})
+write.csv(do.call(rbind, anova_est), here(out_dir, "nested_anova.csv"), row.names = F)
+```
+
+Bootstrap over families (depends on the objects defined in the chunk above):
+
+```{r, eval = F}
+#| label: nested_anova_boot
+# bootstrap over families: resampled families are relabeled so duplicates
+# count as distinct families
+Generate <- function(condition, fixed_objects) {
+  d <- condition_data(condition, fixed_objects)
+  fam_rows <- split(seq_along(d$family), d$family)
+  draw <- sample(length(fam_rows), replace = T)
+  idx <- unlist(fam_rows[draw], use.names = F)
+  list(
+    dat = d$dat[idx, ],
+    family = rep(seq_along(draw), lengths(fam_rows[draw])),
+    image = d$image[idx],
+    rep = d$rep[idx])
+}
+
+# per-site family share; stored for every draw (store_results = TRUE)
+Analyse <- function(condition, dat, fixed_objects) {
+  rho <- nested_anova(dat$dat, dat$family, dat$image, dat$rep)$rho
+  setNames(rho, paste0("site_", seq_along(rho)))
+}
+
+# condition-level summary; per-array intervals are computed from the stored
+# draws after filtering sites by reliability
+Summarise <- function(condition, results, fixed_objects) {
+  c(n_sites = ncol(results),
+    median_boot_sd = median(apply(results, 2, sd, na.rm = T), na.rm = T))
+}
+
+anova_boot <- runSimulation(
+  design = Design,
+  replications = n_boot,
+  generate = Generate,
+  analyse = Analyse,
+  summarise = Summarise,
+  fixed_objects = fixed,
+  seed = genSeeds(Design, iseed = as.integer(nb_id)),
+  packages = "dplyr",
+  store_results = T,
+  save = F)
+qs_save(anova_boot, here(out_dir, "nested_anova_boot.qs2"))
+```
+
+```{r}
+#| label: fig-family_share
+#| fig-cap: "Share of stimulus-driven variance at the family level ($\\rho_{\\textrm{fam}}$, nested ANOVA) per array, for sites with sample-wise reliability $\\geq 0.2$. Points are medians over sites; bars are 95% bootstrap intervals over families. Numbers give the sites included per array."
+#| fig-height: 3
+#| fig-width: 5
+rel_min <- 0.2
+
+keep <- split_corrs %>%
+  filter(
+    onset_type == "median", ms == 150, blanks == "none", average == "image",
+    stimuli %in% c("noisy", "naturalistic"), reliability >= rel_min) %>%
+  transmute(region = as.character(region), stimuli, site)
+
+anova_est <- read.csv(here(out_dir, "nested_anova.csv")) %>%
+  semi_join(keep, by = c("region", "stimuli", "site")) %>%
+  label_arrays()
+# stored bootstrap draws (SimDesign::runSimulation), one row per draw
+anova_boot <- qs_read(here(out_dir, "nested_anova_boot.qs2")) %>%
+  SimDesign::SimResults() %>%
+  group_by(region, stimuli) %>%
+  mutate(boot = row_number()) %>%
+  ungroup() %>%
+  pivot_longer(starts_with("site_"), names_to = "site", values_to = "rho",
+               names_prefix = "site_", names_transform = as.integer,
+               values_drop_na = T) %>%
+  semi_join(keep, by = c("region", "stimuli", "site")) %>%
+  label_arrays()
+
+share_summary <- anova_est %>%
+  group_by(region, stimuli, array) %>%
+  summarize(n = n(), rho = median(rho, na.rm = T), .groups = "drop") %>%
+  left_join(
+    anova_boot %>%
+      group_by(region, stimuli, array, boot) %>%
+      summarize(rho = median(rho, na.rm = T), .groups = "drop") %>%
+      group_by(region, stimuli, array) %>%
+      summarize(
+        lo = quantile(rho, 0.025, na.rm = T),
+        hi = quantile(rho, 0.975, na.rm = T), .groups = "drop"),
+    by = c("region", "stimuli", "array")) %>%
+  order_regions()
+
+dodge <- position_dodge(width = 0.5)
+share_summary %>%
+  ggplot(aes(x = array, y = rho, color = stimuli, shape = stimuli)) +
+    geom_hline(yintercept = c(0, 1), color = "grey80") +
+    geom_pointrange(aes(ymin = lo, ymax = hi), position = dodge, size = 0.25) +
+    geom_text(
+      aes(y = ifelse(stimuli == "naturalistic", -0.08, -0.17), label = n),
+      size = 2, show.legend = F) +
+    facet_grid(cols = vars(region), scales = "free_x", space = "free_x") +
+    scale_y_continuous(breaks = 0:4 * 0.25, expand = expansion(add = c(0.04, 0.02))) +
+    labs(
+      x = "Array", y = expression(rho[fam]),
+      color = "Stimuli", shape = "Stimuli") +
+    scale_color_discrete(
+      palette = scales::pal_viridis(end = 0.8, direction = -1, option = "D")) +
+    theme(panel.grid.minor = element_blank(), legend.position = "bottom")
+```
+
+As a consistency check, $\rho_{\textrm{fam}}$ can also be recovered from the split-half results: the ratio of family-wise to sample-wise signal-to-noise ratios, $m_{\textrm{eff}} = \textrm{SNR}_{\textrm{fam}} / \textrm{SNR}_{\textrm{img}}$ with $\textrm{SNR} = r / (1 - r)$, satisfies $m_{\textrm{eff}} = 1 + (m - 1) \rho_{\textrm{fam}}$. @tbl-family_share_check compares the two estimates on the included sites.
+
+```{r}
+#| label: tbl-family_share_check
+#| tbl-cap: "Median $\\rho_{\\textrm{fam}}$ over included sites from the nested ANOVA and from split-half correlations, and the per-site correlation between the two."
+split_rho <- split_corrs %>%
+  filter(onset_type == "median", ms == 150, blanks == "none",
+         stimuli %in% c("noisy", "naturalistic")) %>%
+  transmute(region = as.character(region), site, stimuli, average, corr) %>%
+  pivot_wider(names_from = average, values_from = corr) %>%
+  mutate(rho_split = (((family / (1 - family)) / (image / (1 - image))) - 1) / 14)
+
+anova_est %>%
+  left_join(split_rho, by = c("region", "stimuli", "site")) %>%
+  order_regions() %>%
+  group_by(region, stimuli) %>%
+  summarize(
+    n = n(),
+    `ANOVA` = median(rho, na.rm = T),
+    `Split-half` = median(rho_split, na.rm = T),
+    `Per-site r` = cor(rho, rho_split, use = "complete.obs"),
+    .groups = "drop") %>%
+  knitr::kable(digits = 2)
+```
+
+### Repetition structure
+
+The nested model above includes repetition terms ($c_r$, $(ac)_{fr}$). A simpler model without them,
+$$
+y_{fir} = \mu + a_f + b_{i(f)} + e_{fir},
+$$
+pools the repetition, family $\times$ repetition, and error sums of squares into its residual. Because the design is balanced, its family and image mean squares are identical to the full model's, so both are computed from the same decomposition (`nested_anova()`, columns with suffix `_simple`). The simple model is not assumption-free: it assumes the repetition terms are zero. If they are not,
+$$
+E[\hat{\sigma}^{2\prime}_f] = \sigma^2_f + \frac{\sigma^2_{fr}}{n}, \qquad E[\hat{\sigma}^{2\prime}_i] = \sigma^2_i - \frac{\sigma^2_r + \sigma^2_{fr}}{n},
+$$
+with $n = 6$ repetitions, so family-specific drift within blocks inflates the family component and block-level effects shrink the image component, both pushing $\rho'_{\textrm{fam}}$ above $\rho_{\textrm{fam}}$. The full model only spends a few degrees of freedom on the repetition terms when they are absent.
+
+An intermediate model keeps the repetition main effect but drops the family $\times$ repetition term,
+$$
+y_{fir} = \mu + a_f + b_{i(f)} + c_r + e_{fir},
+$$
+pooling only the family $\times$ repetition and error sums of squares into its residual (columns with suffix `_rep`). Its family component equals the simple model's; block offsets $\sigma^2_r$ no longer bias the image component, and only $\sigma^2_{fr}$ would. @tbl-rep_structure compares the three models on the same sites as @fig-family_share; the size of $\sigma^2_r$ and $\sigma^2_{fr}$ relative to $\sigma^2_i$ indicates which repetition terms matter.
+
+```{r}
+#| label: tbl-rep_structure
+#| tbl-cap: "Full, repetition-main-effect, and simple nested models on included sites (sample-wise reliability $\\geq 0.2$): median $\\rho_{\\textrm{fam}}$ under each model, median per-site difference from the full model, share of sites where the simple model is higher, and the repetition components relative to the image component (medians over sites)."
+rep_structure <- read.csv(here(out_dir, "nested_anova.csv")) %>%
+  semi_join(keep, by = c("region", "stimuli", "site")) %>%
+  label_arrays() %>%
+  order_regions()
+
+rep_structure %>%
+  group_by(region, stimuli) %>%
+  summarize(
+    n = n(),
+    `Full` = median(rho, na.rm = T),
+    `Rep only` = median(rho_rep, na.rm = T),
+    `Simple` = median(rho_simple, na.rm = T),
+    `Rep only - full` = median(rho_rep - rho, na.rm = T),
+    `Simple - full` = median(rho_simple - rho, na.rm = T),
+    `Share simple > full` = mean(rho_simple > rho, na.rm = T),
+    `s2_r / s2_i` = median(s2_r / s2_i, na.rm = T),
+    `s2_fr / s2_i` = median(s2_fr / s2_i, na.rm = T),
+    .groups = "drop") %>%
+  knitr::kable(digits = 2)
+```
+
+```{r}
+#| label: fig-rep_structure
+#| fig-cap: "Per-site $\\rho_{\\textrm{fam}}$ under the reduced models (rows: repetition main effect only; no repetition terms) vs. the full nested model, for included sites. Dashed line: equality."
+#| fig-height: 4.5
+#| fig-width: 5
+rep_structure %>%
+  pivot_longer(c(rho_rep, rho_simple), names_to = "model", values_to = "rho_reduced") %>%
+  mutate(model = factor(model, c("rho_rep", "rho_simple"), c("Rep only", "Simple"))) %>%
+  ggplot(aes(x = rho, y = rho_reduced, color = stimuli, shape = stimuli)) +
+    geom_abline(linetype = "dashed", color = "grey50") +
+    geom_point(alpha = 0.4, size = 0.8) +
+    facet_grid(rows = vars(model), cols = vars(region)) +
+    coord_equal(xlim = c(-0.25, 1.25), ylim = c(-0.25, 1.25)) +
+    labs(
+      x = expression(rho[fam] ~ "(full)"), y = expression(rho[fam] ~ "(reduced model)"),
+      color = "Stimuli", shape = "Stimuli") +
+    scale_color_discrete(
+      palette = scales::pal_viridis(end = 0.8, direction = -1, option = "D")) +
+    theme(panel.grid.minor = element_blank(), legend.position = "bottom")
+```
+
+Bootstrap for all three models (same design and seeds as `nested_anova_boot`; depends on the objects defined in `nested_anova_compute` and `nested_anova_boot`):
+
+```{r, eval = F}
+#| label: nested_anova_boot_models
+# Generate() from nested_anova_boot is reused; Analyse() returns each
+# model's rho per site, prefixed by model
+models <- c(full = "rho", rep = "rho_rep", simple = "rho_simple")
+
+Analyse_models <- function(condition, dat, fixed_objects) {
+  est <- nested_anova(dat$dat, dat$family, dat$image, dat$rep)
+  sites <- seq_len(nrow(est))
+  unlist(lapply(names(models), function(m)
+    setNames(est[[models[[m]]]], paste0(m, "_site_", sites))))
+}
+
+Summarise_models <- function(condition, results, fixed_objects) {
+  boot_sd <- sapply(names(models), function(m) {
+    x <- results[, startsWith(colnames(results), paste0(m, "_")), drop = F]
+    median(apply(x, 2, sd, na.rm = T), na.rm = T)
+  })
+  c(n_sites = sum(startsWith(colnames(results), "full_")),
+    setNames(boot_sd, paste0("median_boot_sd_", names(models))))
+}
+
+anova_boot_models <- runSimulation(
+  design = Design,
+  replications = n_boot,
+  generate = Generate,
+  analyse = Analyse_models,
+  summarise = Summarise_models,
+  fixed_objects = fixed,
+  seed = genSeeds(Design, iseed = as.integer(nb_id)),
+  packages = "dplyr",
+  store_results = T,
+  save = F)
+qs_save(anova_boot_models, here(out_dir, "nested_anova_boot_models.qs2"))
+```
+
+```{r}
+#| label: fig-rep_structure_boot
+#| fig-cap: "Difference in $\\rho_{\\textrm{fam}}$ between each reduced model and the full model per array (median over included sites of the per-site difference). Bars are 95% bootstrap intervals over families."
+#| fig-height: 4
+#| fig-width: 5
+boot_models <- qs_read(here(out_dir, "nested_anova_boot_models.qs2")) %>%
+  SimDesign::SimResults() %>%
+  group_by(region, stimuli) %>%
+  mutate(boot = row_number()) %>%
+  ungroup() %>%
+  pivot_longer(
+    matches("^(full|rep|simple)_site_"),
+    names_to = c("model", "site"), names_pattern = "^(\\w+?)_site_(\\d+)$",
+    names_transform = list(site = as.integer),
+    values_to = "rho", values_drop_na = T) %>%
+  pivot_wider(names_from = model, values_from = rho) %>%
+  semi_join(keep, by = c("region", "stimuli", "site")) %>%
+  label_arrays()
+
+model_diff <- function(df, full, rep, simple) {
+  df %>%
+    mutate(`Rep only` = {{ rep }} - {{ full }}, Simple = {{ simple }} - {{ full }}) %>%
+    pivot_longer(c(`Rep only`, Simple), names_to = "model", values_to = "diff")
+}
+
+diff_summary <- rep_structure %>%
+  model_diff(rho, rho_rep, rho_simple) %>%
+  group_by(region, stimuli, array, model) %>%
+  summarize(diff = median(diff, na.rm = T), .groups = "drop") %>%
+  left_join(
+    boot_models %>%
+      model_diff(full, rep, simple) %>%
+      group_by(region, stimuli, array, model, boot) %>%
+      summarize(diff = median(diff, na.rm = T), .groups = "drop") %>%
+      group_by(region, stimuli, array, model) %>%
+      summarize(
+        lo = quantile(diff, 0.025, na.rm = T),
+        hi = quantile(diff, 0.975, na.rm = T), .groups = "drop"),
+    by = c("region", "stimuli", "array", "model")) %>%
+  order_regions()
+
+diff_summary %>%
+  ggplot(aes(x = array, y = diff, color = stimuli, shape = stimuli)) +
+    geom_hline(yintercept = 0, color = "grey60") +
+    geom_pointrange(aes(ymin = lo, ymax = hi), position = position_dodge(width = 0.5), size = 0.25) +
+    facet_grid(rows = vars(model), cols = vars(region), scales = "free_x", space = "free_x") +
+    labs(
+      x = "Array", y = expression(Delta * rho[fam] ~ "(reduced - full)"),
+      color = "Stimuli", shape = "Stimuli") +
+    scale_color_discrete(
+      palette = scales::pal_viridis(end = 0.8, direction = -1, option = "D")) +
+    theme(panel.grid.minor = element_blank(), legend.position = "bottom")
+```
+
 ## Sparsity estimation
 
 There are two related problems in sparsity estimation:
@@ -185,6 +523,32 @@ $$
 **Theorem** (biased sparsity given low reliability). For true reliability
 
 *Proof*. 
+
+## Simulation scheme
+
+- Sparsity measures: for all of these, do plug-in and debiased
+  - TR
+  - Activity ratio
+  - Hoyer
+  - Kurtosis
+  - Gini (no need for debiased here)
+- Tuning shape: lognormal, gamma, spike-and-slab fine
+- True sparsity as activity ratio: fine for now
+- Target reliability: fine for now
+- N stimuli: 100, 500, 1000
+- K: 4, 6, 10
+- Noise: Poisson
+- Replications: 500
+- Noise model: leave as Poisson for now; write code with option to customize later
+- Block offsets: same as noise model
+- Baseline and suppression: same as noise model
+
+Implemented in `scripts/sim_sparsity.R` (settings in `config/sim_sparsity.yml`; estimators in `R/sparsity_debiased.R`, tested in `tests/testthat/test-sparsity-debiased.R`). Changes from the outline:
+
+- True sparsity is parameterized by the squared CV of true mean counts across stimuli, $CV^2 \in \{0.002, 0.005, 0.01, 0.02, 0.05, 0.1\}$ ($a = 1 / (1 + CV^2) \approx 0.998$ to $0.91$), crossed with mean count per trial $m \in \{1, 2, 4, 8, 16, 32\}$; reliability follows as $R = CV^2 m / (CV^2 m + 1/K)$ and spans roughly 0.01 to 0.95. The outline's $a \in \{0.3, \dots, 0.9\}$ is unreachable at observed rates: on the raw-count scale, real sites have debiased $a \approx 0.95$ to $1$ ($CV^2 \approx 0.002$ to $0.025$) at 7 to 15 counts per 150 ms window.
+- Null conditions (constant tuning, $a = 1$, $R = 0$) at every mean count.
+- For $K = 10$, split-half reliability averages a fixed random subset of 30 of the 126 balanced splits.
+- On non-negative counts, Treves-Rolls, the activity ratio, and Hoyer are all functions of $a$ (since $L_1 / L_2 = \sqrt{N a}$), so they share bias behavior up to transformation; kurtosis and Gini are the independent measures.
 
 
 ## References

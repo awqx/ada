@@ -29,6 +29,29 @@ test_that("rep_index splits a shared label into consecutive chunks", {
   expect_identical(rep_index(lab), rep(1:3, each = 4))
 })
 
+test_that("rep_index with explicit n_reps handles labels repeated within a block", {
+  # family-style labels: each family appears twice per repetition, 3 reps
+  lab <- rep(c("f1", "f1", "f2", "f2", "blank"), times = 3)
+  expect_identical(rep_index(lab, n_reps = 3), rep(1:3, each = 5))
+  # the default (smallest count) would wrongly infer 3 reps from "blank" here,
+  # but 6 from a set without it
+  expect_identical(max(rep_index(lab[lab != "blank"])), 6L)
+})
+
+test_that("split_half_corr with family-style labels matches pre-averaged images", {
+  set.seed(3)
+  n_fam <- 300
+  per_fam <- 2
+  fam_signal <- rnorm(n_fam)
+  # one block per rep; each family shown as 2 images per block
+  labels <- rep(rep(seq_len(n_fam), each = per_fam), 6)
+  trials <- fam_signal[labels] + rnorm(length(labels))
+  by_family <- split_half_corr(trials, labels, n_reps = 6)
+  # equivalent: average the 2 images within each block first
+  block_mean <- colMeans(matrix(trials, nrow = per_fam))
+  expect_equal(by_family, split_half_corr(block_mean, rep(seq_len(n_fam), 6)))
+})
+
 test_that("rep_index errors when counts are not multiples of n_reps", {
   expect_error(rep_index(c("a", "a", "b", "b", "b")), "multiple")
 })
@@ -85,4 +108,113 @@ test_that("split_half_corr input handling", {
 test_that("spearman_brown", {
   expect_equal(spearman_brown(0.5), 2 / 3)
   expect_equal(spearman_brown(0.3, scaling = 1), 0.3)
+})
+
+# nested design: a families x b images x n reps, one trial per image and rep,
+# presorted with one block per repetition
+simulate_nested <- function(a = 35, b = 15, n = 6, n_sites = 4,
+                            s2_f = 1, s2_i = 1, s2_r = 0.5, s2_fr = 0.2, s2_e = 4) {
+  grid <- expand.grid(image = seq_len(b), family = seq_len(a), rep = seq_len(n))
+  y <- sapply(seq_len(n_sites), function(s) {
+    fam <- rnorm(a, sd = sqrt(s2_f))
+    img <- matrix(rnorm(a * b, sd = sqrt(s2_i)), b, a)
+    rep_eff <- rnorm(n, sd = sqrt(s2_r))
+    fr_eff <- matrix(rnorm(a * n, sd = sqrt(s2_fr)), a, n)
+    fam[grid$family] + img[cbind(grid$image, grid$family)] + rep_eff[grid$rep] +
+      fr_eff[cbind(grid$family, grid$rep)] + rnorm(nrow(grid), sd = sqrt(s2_e))
+  })
+  list(y = y, grid = grid)
+}
+
+test_that("nested_anova recovers variance components and rho", {
+  set.seed(4)
+  sim <- simulate_nested(n_sites = 300, s2_f = 1, s2_i = 3)
+  est <- nested_anova(sim$y, sim$grid$family, sim$grid$image, sim$grid$rep)
+  expect_equal(nrow(est), 300)
+  # means over sites are unbiased for the true components
+  expect_equal(mean(est$s2_f), 1, tolerance = 0.1)
+  expect_equal(mean(est$s2_i), 3, tolerance = 0.05)
+  expect_equal(mean(est$s2_fr), 0.2, tolerance = 0.25)
+  expect_equal(mean(est$s2_e), 4, tolerance = 0.02)
+  expect_equal(median(est$rho), 1 / 4, tolerance = 0.15)
+})
+
+test_that("nested_anova matches lm() sums of squares on one site", {
+  set.seed(5)
+  sim <- simulate_nested(a = 6, b = 4, n = 3, n_sites = 1)
+  d <- data.frame(y = sim$y[, 1], f = factor(sim$grid$family),
+                  i = factor(paste(sim$grid$family, sim$grid$image)), r = factor(sim$grid$rep))
+  ms <- anova(lm(y ~ f + r + f:r + f/i, data = d))[["Mean Sq"]]
+  names(ms) <- rownames(anova(lm(y ~ f + r + f:r + f/i, data = d)))
+  est <- nested_anova(d$y, d$f, d$i, d$r)
+  expect_equal(est$s2_e, ms[["Residuals"]])
+  expect_equal(est$s2_i, (ms[["f:i"]] - ms[["Residuals"]]) / 3)
+  expect_equal(est$s2_f, (ms[["f"]] - ms[["f:i"]] - ms[["f:r"]] + ms[["Residuals"]]) / (4 * 3))
+})
+
+test_that("nested_anova rejects unbalanced designs", {
+  sim <- simulate_nested(a = 4, b = 3, n = 2, n_sites = 1)
+  expect_error(nested_anova(sim$y[-1], sim$grid$family[-1], sim$grid$image[-1], sim$grid$rep[-1]), "balanced")
+})
+
+test_that("nested_anova simple model matches lm() with family/image only", {
+  set.seed(6)
+  sim <- simulate_nested(a = 6, b = 4, n = 3, n_sites = 1)
+  d <- data.frame(y = sim$y[, 1], f = factor(sim$grid$family),
+                  i = factor(paste(sim$grid$family, sim$grid$image)), r = factor(sim$grid$rep))
+  tab <- anova(lm(y ~ f/i, data = d))
+  ms <- setNames(tab[["Mean Sq"]], rownames(tab))
+  est <- nested_anova(d$y, d$f, d$i, d$r)
+  expect_equal(est$s2_e_simple, ms[["Residuals"]])
+  expect_equal(est$s2_i_simple, (ms[["f:i"]] - ms[["Residuals"]]) / 3)
+  expect_equal(est$s2_f_simple, (ms[["f"]] - ms[["f:i"]]) / (4 * 3))
+  # rep main effect mean square from the full model
+  full <- anova(lm(y ~ f + r + f:r + f/i, data = d))
+  expect_equal(est$ms_r, full["r", "Mean Sq"])
+})
+
+test_that("simple and full models agree without repetition effects", {
+  set.seed(7)
+  sim <- simulate_nested(n_sites = 300, s2_f = 1, s2_i = 1, s2_r = 0, s2_fr = 0)
+  est <- nested_anova(sim$y, sim$grid$family, sim$grid$image, sim$grid$rep)
+  expect_equal(mean(est$s2_f_simple), mean(est$s2_f), tolerance = 0.05)
+  expect_equal(mean(est$s2_i_simple), mean(est$s2_i), tolerance = 0.02)
+  expect_equal(mean(est$s2_r), 0, tolerance = 0.02)
+})
+
+test_that("simple model is biased in the predicted direction with repetition effects", {
+  set.seed(8)
+  n <- 6
+  sim <- simulate_nested(n_sites = 400, s2_f = 1, s2_i = 1, s2_r = 2, s2_fr = 1.5, s2_e = 2)
+  est <- nested_anova(sim$y, sim$grid$family, sim$grid$image, sim$grid$rep)
+  # E[s2_f_simple] = s2_f + s2_fr / n; E[s2_i_simple] = s2_i - (s2_r + s2_fr) / n
+  expect_equal(mean(est$s2_f_simple), 1 + 1.5 / n, tolerance = 0.1)
+  expect_equal(mean(est$s2_i_simple), 1 - (2 + 1.5) / n, tolerance = 0.1)
+  # full model stays unbiased
+  expect_equal(mean(est$s2_f), 1, tolerance = 0.1)
+  expect_equal(mean(est$s2_i), 1, tolerance = 0.05)
+  expect_gt(median(est$rho_simple), median(est$rho))
+})
+
+test_that("nested_anova repetition-main-effect model matches lm()", {
+  set.seed(9)
+  sim <- simulate_nested(a = 6, b = 4, n = 3, n_sites = 1)
+  d <- data.frame(y = sim$y[, 1], f = factor(sim$grid$family),
+                  i = factor(paste(sim$grid$family, sim$grid$image)), r = factor(sim$grid$rep))
+  tab <- anova(lm(y ~ r + f/i, data = d))
+  ms <- setNames(tab[["Mean Sq"]], rownames(tab))
+  est <- nested_anova(d$y, d$f, d$i, d$r)
+  expect_equal(est$s2_e_rep, ms[["Residuals"]])
+  expect_equal(est$s2_i_rep, (ms[["f:i"]] - ms[["Residuals"]]) / 3)
+  expect_equal(est$s2_f_rep, (ms[["f"]] - ms[["f:i"]]) / (4 * 3))
+})
+
+test_that("repetition-main-effect model is unbiased with block offsets only", {
+  set.seed(10)
+  sim <- simulate_nested(n_sites = 400, s2_f = 1, s2_i = 1, s2_r = 2, s2_fr = 0, s2_e = 2)
+  est <- nested_anova(sim$y, sim$grid$family, sim$grid$image, sim$grid$rep)
+  expect_equal(mean(est$s2_f_rep), 1, tolerance = 0.1)
+  expect_equal(mean(est$s2_i_rep), 1, tolerance = 0.05)
+  # the simple model is not: its image component shrinks by s2_r / n
+  expect_equal(mean(est$s2_i_simple), 1 - 2 / 6, tolerance = 0.1)
 })

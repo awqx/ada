@@ -1,0 +1,43 @@
+# Settings for scripts/sim_sparsity.R: bias of plug-in vs. debiased sparsity
+# estimators as a function of reliability (notebooks/20261104).
+#
+# Conditions cross tuning shape x true sparsity (squared CV of true mean
+# counts across stimuli) x mean count per trial x number of stimuli x number
+# of repetitions. Reliability follows from them,
+# R = CV^2 m / (CV^2 m + F / K), so varying the mean count at fixed CV^2
+# traces bias vs. reliability at fixed true sparsity. The activity ratio is
+# a = 1 / (1 + CV^2). Null conditions (constant tuning: CV^2 = 0, a = 1,
+# R = 0) are added at every mean count.
+#
+# Grid chosen from the data (naturalistic stimuli, median onset, 150 ms):
+# debiased CV^2 ~ 0.002-0.025 by region (10th percentile of a ~ 0.95), mean
+# counts per trial ~ 5.5-22.5 (10th-90th percentiles).
+
+default:
+  replications: 500
+  seed: 20261104
+
+  shapes: [lognormal, spike_slab]
+  cv2: [0.002, 0.005, 0.01, 0.02, 0.05, 0.1]
+  rates: [1, 2, 4, 8, 16, 32]
+  n_stimuli: [100, 500, 1000]
+  n_reps: [4, 6, 10]
+
+  # split-half reliability averages over at most this many balanced splits
+  # (a fixed random subset, seeded); K = 10 has 126, K <= 6 at most 10
+  max_splits: 30
+
+  # fraction of stimuli active in the spike-and-slab shape
+  spike_slab_p: 0.1
+
+  # trial noise and repetition-block gain drift; only `poisson` and
+  # block_sd = 0 are implemented and used for now
+  noise: poisson
+  block_sd: 0
+
+  # SimDesign execution
+  parallel: false
+  ncores: 4
+  store_results: false
+
+  out: data/processed/20261104/sim_sparsity
